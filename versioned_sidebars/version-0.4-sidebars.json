@@ -1,0 +1,117 @@
+{
+  "docsSidebar": [
+    {
+      "type": "category",
+      "label": "Getting Started",
+      "items": [
+        "intro",
+        "installation",
+        "quickstart"
+      ],
+      "collapsed": false
+    },
+    {
+      "type": "category",
+      "label": "Architecture",
+      "items": [
+        "architecture/overview",
+        "architecture/data-path",
+        "architecture/metadata",
+        "architecture/erasure-coding",
+        "architecture/cluster",
+        "architecture/consistency",
+        "architecture/encryption",
+        "architecture/compression",
+        "architecture/io-engine"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "S3 API Reference",
+      "items": [
+        "s3-api/overview",
+        "s3-api/authentication",
+        "s3-api/bucket-operations",
+        "s3-api/object-operations",
+        "s3-api/multipart",
+        "s3-api/versioning",
+        "s3-api/lifecycle",
+        "s3-api/tagging",
+        "s3-api/cors",
+        "s3-api/website",
+        "s3-api/select",
+        "s3-api/batch-operations",
+        "s3-api/error-responses"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "CLI Reference",
+      "items": [
+        "cli/overview",
+        "cli/server",
+        "cli/cluster",
+        "cli/admin",
+        "cli/configuration"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "SDKs & Integration",
+      "items": [
+        "sdk/overview",
+        "sdk/python-pytorch",
+        "sdk/aws-sdk",
+        "sdk/rest-api"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "AI/ML Use Cases",
+      "items": [
+        "ai-ml/overview",
+        "ai-ml/training-data",
+        "ai-ml/model-checkpoints",
+        "ai-ml/etl-transforms",
+        "ai-ml/pytorch-integration",
+        "ai-ml/benchmarks"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Operations",
+      "items": [
+        "operations/monitoring",
+        "operations/healing",
+        "operations/backup-dr",
+        "operations/tls",
+        "operations/upgrades",
+        "operations/troubleshooting"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Enterprise",
+      "items": [
+        "enterprise/overview",
+        "enterprise/multi-tenancy",
+        "enterprise/replication",
+        "enterprise/compliance",
+        "enterprise/audit",
+        "enterprise/iam",
+        "enterprise/observability",
+        "enterprise/console",
+        "enterprise/licensing"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Comparisons",
+      "items": [
+        "comparison/vs-minio",
+        "comparison/vs-ceph",
+        "comparison/vs-cloud"
+      ]
+    }
+  ]
+}
