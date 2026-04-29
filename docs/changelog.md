@@ -12,9 +12,9 @@ All notable changes to Neolith are documented here. Each release includes highli
 
 ## v0.6.0 - Limits and Beyond
 
-**Released: 2026-04-25**
+**Released: 2026-04-25** | **Enterprise update: 2026-04-29**
 
-A hardening release focused on correctness and operability. Every hardcoded limit in the codebase was audited, 11 were promoted to TOML-configurable values with startup validation, and a new introspection endpoint lets operators inspect all effective limits at runtime. The web console gains multipart upload support for files of any size.
+A hardening release focused on correctness and operability, plus the first Enterprise RDMA transport. Every hardcoded limit in the codebase was audited, 11 were promoted to TOML-configurable values with startup validation, and a new introspection endpoint lets operators inspect all effective limits at runtime. The web console gains multipart upload support for files of any size.
 
 ### Highlights
 
@@ -27,16 +27,33 @@ A hardening release focused on correctness and operability. Every hardcoded limi
 - **Entropy threshold deduplication**: `should_compress()` now accepts a configurable threshold parameter, eliminating a redundant constant that shadowed the TOML config value.
 - **Builder consolidation**: `with_server_limits()` and `with_multipart_config()` apply all config-derived limits to `AppState` in a single call, reducing wiring boilerplate.
 
+### Enterprise: S3 over RDMA / RoCEv2 (Phase E)
+
+- **neolith-rdma crate**: New `neolith-rdma` enterprise crate implementing the full RDMA/RoCEv2 transport layer. `RdmaManager` provides `pull_from_client` (PUT — RDMA READ) and `push_to_client` (GET — RDMA WRITE) with transparent TCP fallback.
+- **Dual-transport architecture**: HTTP/S3 control plane always available; RDMA data plane activated per-request via `x-neolith-rdma-*` headers. Standard AWS SDKs continue to work unchanged on the TCP path.
+- **Per-cell configuration**: Enable RDMA per cell via environment variables (`NEOLITH_RDMA_ENABLED=true`) or Kubernetes CRD (`spec.network.rdmaEnabled: true`). Cells without RDMA enabled are unaffected.
+- **Automatic TCP fallback**: `NEOLITH_RDMA_FALLBACK_TCP=true` (default) — any RDMA setup failure silently falls back to the HTTP body path. Set to `false` only in validated environments.
+- **ibverbs integration**: Full QP lifecycle support (INIT→RTR→RTS) via `IbverbsTransport` on Linux + `rdma` feature. `MockRdmaTransport` on all other platforms for development and testing.
+- **MR pool**: Pre-registered memory region pool (default 512 MiB). Set `NEOLITH_RDMA_MR_POOL_MB=0` to use On-Demand Paging (ODP) on ConnectX-4 Lx or newer.
+- **Admin API**: `GET /_neolith/admin/v1/rdma/status`, `GET /_neolith/admin/v1/rdma/devices`, `POST /_neolith/rdma/connect`, `POST /_neolith/rdma/disconnect/{id}`.
+- **Prometheus metrics**: 11 new RDMA metrics covering bytes transferred, operation counts, fallback reasons, QP state, MR pool utilization, and CQ overflows.
+- **Minimum object threshold**: Objects below `NEOLITH_RDMA_MIN_OBJ_KB` (default 256 KiB) always use TCP — RDMA setup overhead is not worth it for small objects.
+
 ### Breaking Changes
 
 - `server.max_body_size_bytes` default changed from 128 MiB to 512 MiB. If you relied on the old 128 MiB limit to restrict upload sizes, set `max_body_size_bytes = 134217728` in your config.
 - `neolith_compress::should_compress()` now takes a third parameter (`entropy_threshold: f64`). Use `neolith_compress::DEFAULT_ENTROPY_THRESHOLD` to preserve the old behavior.
 - `neolith_s3::build_router()` now reads `state.max_body_size_bytes` instead of using a hardcoded constant. No change needed if you use the standard server startup path.
 
+### New Crates
+
+- **neolith-rdma**: RDMA/RoCEv2 transport layer with `RdmaManager`, `IbverbsTransport`, `MockRdmaTransport`, and Prometheus metrics (Enterprise)
+
 ### Stats
 
 - 120/120 OSS features complete
-- 1,025 tests (87 new), zero clippy warnings
+- 57/60 Enterprise features complete (RDMA-1 through RDMA-3 shipped; RDMA-4, RDMA-5 in progress)
+- 1,025+ tests, zero clippy warnings
 
 ---
 

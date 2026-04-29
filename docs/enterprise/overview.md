@@ -40,6 +40,7 @@ Neolith Enterprise extends the open-source core with production-grade multi-tena
 | K8s Operator (CRD) | - | Yes | Yes |
 | Ed25519 offline licensing | - | Yes | Yes |
 | Opt-in telemetry | - | Yes | Yes |
+| RDMA / RoCEv2 data plane | - | Yes | Yes |
 | Iceberg REST Catalog | - | - | Yes |
 | Streaming ingest | - | - | Yes |
 | Advanced ETL pipelines | - | - | Yes |
@@ -97,6 +98,7 @@ Neolith Enterprise includes 57 features across 13 phases:
 | Phase C11 | Auth Extensions | Presigned URL policy constraints, advanced bucket policies |
 | Phase C12 | Observability | Distributed tracing, drive SMART monitoring, drive latency tracking |
 | Phase C13 | Web Console | React-based management UI, monitoring dashboards |
+| Phase E | RDMA Transport | S3 over RDMA/RoCEv2, per-cell enable/disable, TCP fallback, QP lifecycle, MR pool, Prometheus metrics |
 
 ## Enterprise Crate Architecture
 
@@ -113,6 +115,7 @@ The Enterprise edition is composed of the following crates, each with a focused 
 | `neolith-auth-ext` | OIDC/LDAP integration, extended authentication and authorization |
 | `neolith-catalog` | Multi-tenant catalog (tenant/cell), Iceberg REST Catalog |
 | `neolith-proxy` | Gateway proxy with QoS, forks, streaming, replication, tiering, and more |
+| `neolith-rdma` | Optional RDMA/RoCEv2 data plane; `MockRdmaTransport` on all platforms, `IbverbsTransport` on Linux + `rdma` feature |
 
 All enterprise crates depend on the OSS crates (`neolith-server`, `neolith-meta`, `neolith-s3`, etc.) but never the reverse. The OSS codebase has zero knowledge of enterprise features.
 

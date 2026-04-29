@@ -120,6 +120,7 @@ const sidebars: SidebarsConfig = {
         'enterprise/compliance',
         'enterprise/audit',
         'enterprise/iam',
+        'enterprise/rdma',
         'enterprise/observability',
         'enterprise/console',
         'enterprise/licensing',
