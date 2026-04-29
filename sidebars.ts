@@ -93,6 +93,7 @@ const sidebars: SidebarsConfig = {
       label: 'Operations',
       items: [
         'operations/configuration',
+        'operations/limits',
         'operations/monitoring',
         'operations/healing',
         'operations/backup-dr',

@@ -26,6 +26,16 @@ edition = "oss"
 # Graceful shutdown drain timeout in seconds
 drain_timeout_seconds = 30
 
+# ─── Server Limits ──────────────────────────────────────────────
+[server]
+max_body_size_bytes = 536870912   # 512 MiB (use multipart for larger)
+region = "us-east-1"              # SigV4 scope region
+inline_threshold_bytes = 131072   # 128 KiB (objects below: inlined in metadata)
+max_key_length = 1024             # Max object key length (S3 spec: 1024)
+max_tags_per_object = 10          # Max tags per object (S3 spec: 10)
+list_parallelism = 32             # Concurrent metadata reads during LIST
+max_clock_skew_seconds = 900      # SigV4 timestamp tolerance (15 min)
+
 # ─── Storage ─────────────────────────────────────────────────────
 [storage]
 # Data directories / drive paths
@@ -231,6 +241,20 @@ For LRC (Locally Repairable Codes), standard ratios are available:
 |---|---|---|---|
 | `10:4:2` (group_size=5) | 10 data + 4 parity | 2 groups of 5 | Read 5 shards (vs 10 for RS) |
 | `12:3:3` (group_size=4) | 12 data + 3 parity | 3 groups of 4 | Read 4 shards (vs 12 for RS) |
+
+### `[server]`
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `max_body_size_bytes` | `usize` | `536870912` (512 MiB) | Max single-PUT body size. Range: 1 MiB - 5 GiB |
+| `region` | `String` | `us-east-1` | S3 region for `GetBucketLocation` and SigV4 scope |
+| `inline_threshold_bytes` | `u64` | `131072` (128 KiB) | Objects at/below this size are inlined in metadata |
+| `max_key_length` | `usize` | `1024` | Max object key length in bytes. Range: 1 - 2048 |
+| `max_tags_per_object` | `usize` | `10` | Max tags per object. Range: 1 - 50 |
+| `list_parallelism` | `usize` | `32` | Concurrent metadata reads during LIST. Range: 1 - 256 |
+| `max_clock_skew_seconds` | `i64` | `900` (15 min) | SigV4 timestamp tolerance. Range: 60 - 3600 |
+
+For a detailed breakdown of all limits and their boundary behaviors, see the [Limits Reference](../operations/limits).
 
 ### `[compression]`
 

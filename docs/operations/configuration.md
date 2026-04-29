@@ -37,9 +37,13 @@ drain_timeout_seconds = 30
 
 ```toml
 [server]
-max_body_size_bytes = 134217728  # 128 MiB
-region = "us-east-1"             # SigV4 scope region
-inline_threshold_bytes = 131072  # 128 KiB - objects below this are inlined in metadata
+max_body_size_bytes = 536870912   # 512 MiB (default; use multipart for larger)
+region = "us-east-1"              # SigV4 scope region
+inline_threshold_bytes = 131072   # 128 KiB - objects below this are inlined in metadata
+max_key_length = 1024             # Max object key length in bytes (S3 spec: 1024)
+max_tags_per_object = 10          # Max tags per object (S3 spec: 10)
+list_parallelism = 32             # Concurrent metadata reads during LIST
+max_clock_skew_seconds = 900      # SigV4 timestamp tolerance (15 min)
 ```
 
 ### Storage

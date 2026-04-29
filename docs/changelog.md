@@ -10,6 +10,36 @@ All notable changes to Neolith are documented here. Each release includes highli
 
 ---
 
+## v0.6.0 - Limits and Beyond
+
+**Released: 2026-04-25**
+
+A hardening release focused on correctness and operability. Every hardcoded limit in the codebase was audited, 11 were promoted to TOML-configurable values with startup validation, and a new introspection endpoint lets operators inspect all effective limits at runtime. The web console gains multipart upload support for files of any size.
+
+### Highlights
+
+- **Config-driven limits**: 11 previously hardcoded constants are now configurable via TOML. `server.max_body_size_bytes` (raised from 128 MiB to 512 MiB default), `server.max_key_length`, `server.max_tags_per_object`, `server.list_parallelism`, `server.max_clock_skew_seconds`, plus multipart TTL, concurrent uploads, and spill threshold - all tunable per deployment.
+- **Limits introspection**: `GET /_neolith/admin/v1/limits` returns 22 effective limits across 7 categories (s3, auth, storage, compression, heal, batch, etl) with source, human-readable value, and reloadable flag.
+- **Config validation hardening**: `Config::validate()` now enforces range checks on all configurable limits and cross-field consistency (e.g. spill threshold must not exceed body size). Invalid configs are rejected at startup with descriptive errors.
+- **Console multipart upload**: Files >= 64 MiB automatically use S3 multipart upload (CreateMultipartUpload, UploadPart with 4-way concurrency, CompleteMultipartUpload). No more HTTP 413 on large files.
+- **Console bug fixes**: 5 bugs fixed in the web console - useState misuse in event notification editor, stale metrics ring buffers on logout, error rate miscounting 3xx as errors, SSE header reading wrong header for SSE-S3, and no-op string replacements in event formatter.
+- **Property-based testing**: Added `proptest` and `test-case` for boundary testing. Key length validation, clock skew boundaries, multipart saturation, entropy invariants, and config fuzz testing - all exercised without needing a cluster.
+- **Entropy threshold deduplication**: `should_compress()` now accepts a configurable threshold parameter, eliminating a redundant constant that shadowed the TOML config value.
+- **Builder consolidation**: `with_server_limits()` and `with_multipart_config()` apply all config-derived limits to `AppState` in a single call, reducing wiring boilerplate.
+
+### Breaking Changes
+
+- `server.max_body_size_bytes` default changed from 128 MiB to 512 MiB. If you relied on the old 128 MiB limit to restrict upload sizes, set `max_body_size_bytes = 134217728` in your config.
+- `neolith_compress::should_compress()` now takes a third parameter (`entropy_threshold: f64`). Use `neolith_compress::DEFAULT_ENTROPY_THRESHOLD` to preserve the old behavior.
+- `neolith_s3::build_router()` now reads `state.max_body_size_bytes` instead of using a hardcoded constant. No change needed if you use the standard server startup path.
+
+### Stats
+
+- 120/120 OSS features complete
+- 1,025 tests (87 new), zero clippy warnings
+
+---
+
 ## v0.5.0 - Fork You Very Much
 
 **Released: 2026-04-05**
