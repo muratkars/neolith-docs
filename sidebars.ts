@@ -93,6 +93,7 @@ const sidebars: SidebarsConfig = {
       label: 'Operations',
       items: [
         'operations/configuration',
+        'operations/deployment-topologies',
         'operations/limits',
         'operations/monitoring',
         'operations/healing',

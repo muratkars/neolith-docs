@@ -31,7 +31,6 @@ Neolith uses a symmetric peer-to-peer architecture where every node is identical
 | TLS | rustls 1.3 only (no OpenSSL) |
 | Hashing | BLAKE3 (128-bit truncated for ETag) |
 | Allocator | jemalloc (Linux), system (macOS) |
-| RDMA | RoCEv2 / ibverbs (Enterprise, Linux) |
 
 ## Quick Example
 
@@ -47,16 +46,9 @@ aws --endpoint-url http://localhost:9000 s3 cp myfile.txt s3://my-bucket/
 aws --endpoint-url http://localhost:9000 s3 cp s3://my-bucket/myfile.txt ./downloaded.txt
 ```
 
-## What's New in v0.6
-
-- **Config-driven limits**: 11 previously hardcoded limits are now TOML-configurable. `GET /_neolith/admin/v1/limits` shows all effective limits at runtime.
-- **Console multipart upload**: Large file uploads now use S3 multipart automatically — no more HTTP 413 on files >= 64 MiB.
-- **S3 over RDMA / RoCEv2** *(Enterprise)*: Optional RDMA data plane for PUT and GET on RoCEv2 networks. Object payloads bypass the TCP stack at wire speed. See [RDMA / RoCEv2](/docs/enterprise/rdma).
-
 ## What's Next?
 
 - [Installation](/docs/installation) - Build from source or run with Docker
 - [Quickstart](/docs/quickstart) - Your first bucket in 5 minutes
 - [Architecture Overview](/docs/architecture/overview) - Deep dive into the design
 - [S3 API Reference](/docs/s3-api/overview) - Full API documentation
-- [RDMA / RoCEv2](/docs/enterprise/rdma) - S3 over RDMA for Enterprise clusters

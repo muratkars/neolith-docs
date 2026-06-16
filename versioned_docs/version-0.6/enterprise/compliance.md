@@ -1,0 +1,173 @@
+---
+sidebar_position: 4
+title: "Compliance"
+---
+
+# Compliance
+
+Neolith Enterprise's `neolith-compliance` crate provides regulatory compliance features including Object Lock (WORM), data retention policies, legal hold, and GDPR-aligned data residency controls.
+
+## Object Lock (WORM)
+
+Object Lock implements Write-Once-Read-Many (WORM) storage semantics, preventing objects from being deleted or overwritten for a specified retention period. This is required for regulatory compliance with SEC Rule 17a-4(f), FINRA, MiFID II, and other financial regulations.
+
+### Retention Modes
+
+Neolith supports two retention modes, matching the S3 Object Lock specification:
+
+| Mode | Behavior |
+|---|---|
+| **Governance** | Prevents deletion by normal users. Users with `s3:BypassGovernanceRetention` permission can override the lock. Suitable for internal data governance. |
+| **Compliance** | Prevents deletion by all users, including the root account. The retention period cannot be shortened. Required for SEC 17a-4(f) and similar regulations. |
+
+### How It Works
+
+1. **Enable Object Lock on bucket creation**: Object Lock must be enabled when the bucket is created. It cannot be added to an existing bucket.
+2. **Set default retention**: A bucket-level default retention policy (mode + period) is applied to all objects unless overridden per-object.
+3. **Per-object retention**: Individual objects can have their own retention mode and period, set via `x-amz-object-lock-mode` and `x-amz-object-lock-retain-until-date` headers.
+
+```bash
+# Create a bucket with Object Lock enabled
+aws s3api create-bucket \
+  --bucket compliance-records \
+  --object-lock-enabled-for-object-lock-configuration \
+  --endpoint-url http://localhost:9000
+
+# Set default retention: Compliance mode, 7 years
+aws s3api put-object-lock-configuration \
+  --bucket compliance-records \
+  --object-lock-configuration '{
+    "ObjectLockEnabled": "Enabled",
+    "Rule": {
+      "DefaultRetention": {
+        "Mode": "COMPLIANCE",
+        "Years": 7
+      }
+    }
+  }' \
+  --endpoint-url http://localhost:9000
+```
+
+### Versioning Requirement
+
+Object Lock requires versioning to be enabled on the bucket. When an object is "deleted" in a versioned bucket with Object Lock, a delete marker is created but the locked version remains protected. The actual data version cannot be permanently deleted until the retention period expires.
+
+## Legal Hold
+
+Legal hold is an indefinite retention flag that can be applied to or removed from any object version, independent of the retention period. It is used when data must be preserved for litigation or investigation, often with no predetermined end date.
+
+```bash
+# Place a legal hold
+aws s3api put-object-legal-hold \
+  --bucket compliance-records \
+  --key financial-report-2025.pdf \
+  --legal-hold '{"Status": "ON"}' \
+  --endpoint-url http://localhost:9000
+
+# Remove a legal hold (requires s3:PutObjectLegalHold permission)
+aws s3api put-object-legal-hold \
+  --bucket compliance-records \
+  --key financial-report-2025.pdf \
+  --legal-hold '{"Status": "OFF"}' \
+  --endpoint-url http://localhost:9000
+```
+
+An object under legal hold cannot be deleted even if its retention period has expired. Both the legal hold and retention period must be cleared/expired before the object can be deleted.
+
+## Data Retention Policies
+
+Beyond Object Lock, Neolith supports lifecycle-based retention policies for general data governance:
+
+| Policy Type | Description |
+|---|---|
+| **Minimum retention** | Objects cannot be deleted before a minimum age |
+| **Maximum retention** | Objects are automatically deleted after a maximum age (data minimization) |
+| **Transition retention** | Objects transition to cold storage after a specified age, with a separate deletion age |
+
+These policies are configured via the lifecycle API and enforced by the background lifecycle scanner:
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "gdpr-data-minimization",
+      "Filter": {"Prefix": "user-data/"},
+      "Status": "Enabled",
+      "Expiration": {"Days": 730},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 90}
+    }
+  ]
+}
+```
+
+## GDPR Data Residency
+
+Neolith Enterprise supports data residency controls to help meet GDPR, data sovereignty, and cross-border data transfer requirements:
+
+### Tenant-Level Residency
+
+In multi-tenant mode, each tenant can be restricted to specific storage cells that map to geographic regions:
+
+```toml
+[tenant.eu-customer]
+cells = ["cell-eu-west-1", "cell-eu-central-1"]
+# Data for this tenant will ONLY be stored in EU cells
+# Replication is restricted to cells in the allowed regions
+```
+
+### Bucket-Level Residency
+
+Individual buckets can have residency constraints that restrict where their data is stored and replicated:
+
+```bash
+# Set residency constraint via bucket metadata
+curl -X PUT http://localhost:9000/_neolith/admin/v1/buckets/eu-data/residency \
+  -H "Content-Type: application/json" \
+  -d '{
+    "allowed_regions": ["eu-west-1", "eu-central-1"],
+    "deny_cross_region_replication": true
+  }'
+```
+
+### Residency Enforcement
+
+Residency constraints are enforced at multiple levels:
+
+1. **Write path**: The proxy checks residency constraints before routing a write to a storage node. Writes that would violate residency are rejected with `403 ResidencyViolation`.
+2. **Replication**: The replication engine respects residency constraints. Data restricted to EU regions will not be replicated to US sites, even if a replication rule would otherwise require it.
+3. **Tiering**: Tier transitions are restricted to storage backends within the allowed regions.
+4. **Audit**: All residency constraint changes are logged in the tamper-evident audit log.
+
+## Compliance Reporting
+
+Neolith Enterprise generates compliance reports for auditors:
+
+| Report | Content |
+|---|---|
+| **Retention report** | All objects under retention, their mode, and expiry date |
+| **Legal hold report** | All objects under legal hold, who placed the hold, and when |
+| **Residency report** | Data distribution by region, any residency constraint violations |
+| **Access report** | Who accessed what data, when, and from where (from audit log) |
+
+Reports are generated on demand via the Admin API or on a schedule via the Web Console:
+
+```bash
+# Generate a retention compliance report
+curl http://localhost:9000/_neolith/admin/v1/compliance/reports/retention \
+  -H "Accept: application/json"
+```
+
+## Configuration
+
+```toml
+[enterprise.compliance]
+enabled = true
+default_retention_mode = "GOVERNANCE"
+default_retention_days = 365
+enforce_versioning_on_lock = true
+
+[enterprise.compliance.gdpr]
+enabled = true
+default_max_retention_days = 730  # 2 years
+require_residency_on_tenant_create = true
+```

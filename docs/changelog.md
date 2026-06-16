@@ -27,6 +27,16 @@ A hardening release focused on correctness and operability, plus the first Enter
 - **Entropy threshold deduplication**: `should_compress()` now accepts a configurable threshold parameter, eliminating a redundant constant that shadowed the TOML config value.
 - **Builder consolidation**: `with_server_limits()` and `with_multipart_config()` apply all config-derived limits to `AppState` in a single call, reducing wiring boilerplate.
 
+### Durability & Placement — Architecture Hardening (Phase 28, in progress)
+
+The first milestone of the multi-exabyte architecture-hardening track makes the durability story explicit and configurable. These are foundational, user-facing controls; the replicated journal and erasure-coded data path that build on them are on the roadmap below.
+
+- **Write-ahead durability policy** (`[durability] fsync`, default `true`): every newly created file (object data, tags, version files) **and its parent directory entry** are `fsync`'d before a write is acknowledged, and again after the metadata rename. Closes the acked-write-loss-on-power-failure gap on the single-node and per-replica path. Set `fsync = false` only for throughput-oriented dev/test where durability is not required.
+- **Failure-domain placement policy** (`[cluster] placement_policy`, `"pack"` default or `"strict"`): under `strict`, writes that cannot spread across distinct failure domains (zone/rack/host) are refused with `507 Insufficient Storage` rather than silently under-protected. A **startup guardrail** fails fast when `strict` + the configured erasure/replication scheme + cluster size are unsatisfiable, so misconfigurations are caught at boot, not at first data loss.
+- **Per-scope erasure scheme resolution**: the effective erasure scheme is now resolved with a defined precedence — **storage-class > bucket > pool > global** — and stamped per object at write time.
+- **`replication_factor` wired end-to-end**: the configured `[cluster] replication_factor` is now applied to cluster placement (previously partially unwired).
+- **New documentation**: see [Deployment Topologies & Minimums](./operations/deployment-topologies.md) for the failure-domain model, drive/node minimums per topology, and what each topology survives.
+
 ### Enterprise: S3 over RDMA / RoCEv2 (Phase E)
 
 - **neolith-rdma crate**: New `neolith-rdma` enterprise crate implementing the full RDMA/RoCEv2 transport layer. `RdmaManager` provides `pull_from_client` (PUT — RDMA READ) and `push_to_client` (GET — RDMA WRITE) with transparent TCP fallback.

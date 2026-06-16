@@ -24,7 +24,7 @@ neolith server start /data/neolith
 You should see output like:
 
 ```
-[INFO] Neolith v0.6.0
+[INFO] Neolith v0.4.0
 [INFO] SIMD: AVX2 detected
 [INFO] Erasure coding: RS(8,4)
 [INFO] Data path: /data/neolith
@@ -63,7 +63,7 @@ List buckets:
 
 ```bash
 neos3 ls
-# 2026-04-29 10:00:00 my-bucket
+# 2026-03-17 10:00:00 my-bucket
 ```
 
 ## Upload and Download Objects
@@ -80,7 +80,7 @@ List objects in the bucket:
 
 ```bash
 neos3 ls s3://my-bucket/
-# 2026-04-29 10:01:00   16 hello.txt
+# 2026-03-17 10:01:00   16 hello.txt
 ```
 
 Download the file:
@@ -136,11 +136,32 @@ neolith server start /data/neolith \
   --master-key 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
 ```
 
+Or via environment variable:
+
+```bash
+export NEOLITH_MASTER_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+neolith server start /data/neolith
+```
+
 The master key is a 32-byte hex string (64 hex characters). Each object gets a unique Data Encryption Key (DEK) derived via HKDF, and data is encrypted with AES-256-GCM in 64KB blocks.
+
+Objects are encrypted transparently - the S3 API works exactly the same:
+
+```bash
+neos3 cp secret.txt s3://my-bucket/secret.txt
+neos3 cp s3://my-bucket/secret.txt decrypted.txt
+# Files are identical - encryption/decryption is automatic
+```
 
 ## Multi-Drive Setup
 
 For better performance and fault tolerance, spread data across multiple drives:
+
+```bash
+neolith server start /mnt/disk1 /mnt/disk2 /mnt/disk3 /mnt/disk4
+```
+
+Using brace expansion:
 
 ```bash
 neolith server start /mnt/disk{1...4}
@@ -158,25 +179,31 @@ curl http://localhost:9000/_neolith/v1/info | jq .
 
 ```json
 {
-  "version": "0.6.0",
+  "version": "0.4.0",
   "edition": "oss",
   "uptime_seconds": 120,
   "drives": ["/mnt/disk1", "/mnt/disk2", "/mnt/disk3", "/mnt/disk4"]
 }
 ```
 
-## Inspect Effective Limits (New in v0.6)
+## Using the Neolith CLI
+
+The Neolith CLI includes cluster management commands:
 
 ```bash
-curl http://localhost:9000/_neolith/admin/v1/limits | jq .
-```
+# Check cluster info
+neolith cluster info --endpoint http://localhost:9000
 
-Returns all 22 configurable limits across 7 categories with their current values and whether they can be hot-reloaded.
+# View cluster status
+neolith cluster status --endpoint http://localhost:9000
+
+# Trigger a heal scan
+neolith admin heal start --endpoint http://localhost:9000
+```
 
 ## What's Next?
 
 - [Architecture Overview](/docs/architecture/overview) - Understand how Neolith works under the hood
 - [S3 API Reference](/docs/s3-api/overview) - Full API documentation
 - [AI/ML Workflows](/docs/ai-ml/overview) - Batch GET, ETL transforms, and PyTorch integration
-- [RDMA / RoCEv2](/docs/enterprise/rdma) - S3 over RDMA for Enterprise clusters with RoCEv2 NICs
 - [Operations Guide](/docs/operations/monitoring) - Monitoring, metrics, and administration

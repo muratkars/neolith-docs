@@ -32,14 +32,11 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/muratkars/neolith-docs/edit/main/',
-          lastVersion: '0.4',
+          lastVersion: '0.6',
           versions: {
             current: {
               label: 'Next',
               path: 'next',
-            },
-            '0.4': {
-              label: '0.4',
             },
           },
         },

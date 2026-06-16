@@ -14,7 +14,8 @@ Neolith is distributed as a single static binary. You can build from source or r
 | CPU | SIMD-capable (AVX2/NEON/SSSE3) | AVX-512 for maximum EC throughput |
 | RAM | 512 MB | 4 GB+ (depends on dataset size) |
 | Disk | Any filesystem (ext4, XFS, ZFS) | XFS on NVMe for best performance |
-| OS | Linux (x86_64, aarch64), macOS | Linux for io_uring and RDMA support |
+| OS | Linux (x86_64, aarch64), macOS | Linux for io_uring support |
+| Linux kernel | 3.2+ (standard I/O engine; Rust tier-1 baseline) | 5.6+ (enables the io_uring engine) |
 | Rust | 1.85+ (Edition 2024) | Latest stable |
 
 Neolith requires a SIMD-capable CPU and will refuse to start without one. This is a deliberate design choice: scalar erasure coding is too slow for production use.
@@ -56,7 +57,7 @@ sudo cp target/release/neolith /usr/local/bin/
 
 ### Build with io_uring (Linux Only)
 
-For Linux systems with kernel 5.11+, enable the io_uring I/O engine for lower latency and higher throughput:
+For Linux systems with kernel 5.6+, enable the io_uring I/O engine for lower latency and higher throughput:
 
 ```bash
 cargo build --release --features iouring
@@ -75,21 +76,6 @@ sudo dnf install liburing-devel
 ```
 
 The io_uring engine is automatically detected at runtime. If the kernel does not support it, Neolith falls back to the standard I/O engine.
-
-### Build with RDMA Support (Enterprise, Linux Only)
-
-For Enterprise deployments on Linux with RoCEv2-capable NICs, enable the ibverbs RDMA transport:
-
-```bash
-# Install libibverbs development headers
-sudo apt-get install libibverbs-dev rdma-core   # Debian/Ubuntu
-sudo dnf install libibverbs-devel rdma-core     # Fedora/RHEL
-
-# Build the enterprise server with RDMA
-cargo build --release -p neolith-enterprise-server --features rdma
-```
-
-Without the `rdma` feature, all platforms compile normally and RDMA operations fall back to the TCP path. See [RDMA / RoCEv2](/docs/enterprise/rdma) for full configuration instructions.
 
 ## Docker
 
@@ -138,7 +124,7 @@ Check that Neolith is installed and the binary works:
 
 ```bash
 neolith --version
-# neolith 0.6.0
+# neolith 0.4.0
 ```
 
 Verify SIMD support is detected:
