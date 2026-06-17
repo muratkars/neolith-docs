@@ -15,6 +15,7 @@ Neolith is distributed as a single static binary. You can build from source or r
 | RAM | 512 MB | 4 GB+ (depends on dataset size) |
 | Disk | Any filesystem (ext4, XFS, ZFS) | XFS on NVMe for best performance |
 | OS | Linux (x86_64, aarch64), macOS | Linux for io_uring support |
+| Linux kernel | 3.2+ (standard I/O engine; Rust tier-1 baseline) | 5.6+ (enables the io_uring engine) |
 | Rust | 1.85+ (Edition 2024) | Latest stable |
 
 Neolith requires a SIMD-capable CPU and will refuse to start without one. This is a deliberate design choice: scalar erasure coding is too slow for production use.
@@ -56,7 +57,7 @@ sudo cp target/release/neolith /usr/local/bin/
 
 ### Build with io_uring (Linux Only)
 
-For Linux systems with kernel 5.11+, enable the io_uring I/O engine for lower latency and higher throughput:
+For Linux systems with kernel 5.6+, enable the io_uring I/O engine for lower latency and higher throughput:
 
 ```bash
 cargo build --release --features iouring
