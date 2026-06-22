@@ -96,12 +96,12 @@ Compression codec can be configured at the bucket level:
 
 ```bash
 # Create bucket with zstd compression
-neos3api put-bucket-configuration \
+aws --endpoint-url http://localhost:9000 s3api put-bucket-configuration \
   --bucket archive-bucket \
   --configuration '{"compression": "zstd"}'
 
 # Create bucket with no compression
-neos3api put-bucket-configuration \
+aws --endpoint-url http://localhost:9000 s3api put-bucket-configuration \
   --bucket raw-bucket \
   --configuration '{"compression": "none"}'
 ```

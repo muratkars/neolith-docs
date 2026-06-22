@@ -45,24 +45,27 @@ aws configure
 # Default output format: json
 ```
 
-Set up an alias for convenience:
+Neolith speaks the S3 API, so any S3 client works. This guide uses the AWS CLI pointed at your local endpoint with `--endpoint-url`.
 
-```bash
-alias neos3='aws --endpoint-url http://localhost:9000 s3'
-alias neos3api='aws --endpoint-url http://localhost:9000 s3api'
-```
+:::tip Tip
+With AWS CLI v2.13+ you can `export AWS_ENDPOINT_URL=http://localhost:9000` once and drop the `--endpoint-url` flag from every command below.
+:::
+
+:::note Neolith-native client
+[`neo`](https://github.com/muratkars/neo) is Neolith's own client — `neo mb`, `neo cp`, `neo batch get`, bucket forks, and ML dataset inspection as first-class commands. It is in **early development** (commands are landing incrementally), so until it's ready, use the AWS CLI (shown here) or `mc`.
+:::
 
 ## Create a Bucket
 
 ```bash
-neos3 mb s3://my-bucket
+aws --endpoint-url http://localhost:9000 s3 mb s3://my-bucket
 # make_bucket: my-bucket
 ```
 
 List buckets:
 
 ```bash
-neos3 ls
+aws --endpoint-url http://localhost:9000 s3 ls
 # 2026-03-17 10:00:00 my-bucket
 ```
 
@@ -72,21 +75,21 @@ Upload a file:
 
 ```bash
 echo "Hello, Neolith!" > hello.txt
-neos3 cp hello.txt s3://my-bucket/hello.txt
+aws --endpoint-url http://localhost:9000 s3 cp hello.txt s3://my-bucket/hello.txt
 # upload: ./hello.txt to s3://my-bucket/hello.txt
 ```
 
 List objects in the bucket:
 
 ```bash
-neos3 ls s3://my-bucket/
+aws --endpoint-url http://localhost:9000 s3 ls s3://my-bucket/
 # 2026-03-17 10:01:00   16 hello.txt
 ```
 
 Download the file:
 
 ```bash
-neos3 cp s3://my-bucket/hello.txt downloaded.txt
+aws --endpoint-url http://localhost:9000 s3 cp s3://my-bucket/hello.txt downloaded.txt
 cat downloaded.txt
 # Hello, Neolith!
 ```
@@ -94,7 +97,7 @@ cat downloaded.txt
 ## Upload a Directory
 
 ```bash
-neos3 cp /path/to/dataset/ s3://my-bucket/dataset/ --recursive
+aws --endpoint-url http://localhost:9000 s3 cp /path/to/dataset/ s3://my-bucket/dataset/ --recursive
 ```
 
 ## Enable Authentication
@@ -148,8 +151,8 @@ The master key is a 32-byte hex string (64 hex characters). Each object gets a u
 Objects are encrypted transparently - the S3 API works exactly the same:
 
 ```bash
-neos3 cp secret.txt s3://my-bucket/secret.txt
-neos3 cp s3://my-bucket/secret.txt decrypted.txt
+aws --endpoint-url http://localhost:9000 s3 cp secret.txt s3://my-bucket/secret.txt
+aws --endpoint-url http://localhost:9000 s3 cp s3://my-bucket/secret.txt decrypted.txt
 # Files are identical - encryption/decryption is automatic
 ```
 
