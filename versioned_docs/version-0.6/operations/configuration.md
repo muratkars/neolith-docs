@@ -78,7 +78,28 @@ fsync = true   # default: true
 
 When `fsync = true` (the default), every newly created file (object data, tags, version files) **and its parent directory entry** are flushed to stable storage before the write is acknowledged, and again after the atomic metadata rename. This closes the window where an acknowledged write could be lost to a power failure while still in the OS page cache.
 
-Set `fsync = false` only for throughput-oriented development or test environments where durability across a crash/power loss is not required — it trades the power-fail guarantee for lower write latency.
+#### What `fsync` does and doesn't protect
+
+`fsync` guards against **power loss and OS/kernel crashes**. It does **not** affect a Neolith process crash (`kill -9`, panic, OOM): those leave the data safely in the OS page cache, and the kernel still flushes it to disk. So disabling `fsync` only widens the failure window for *power/kernel* events, not for process restarts.
+
+The cost is real: a synchronous flush before every ack. On large objects this dominates write latency — e.g. 10 MiB objects at concurrency can run several times slower with `fsync` on than off, because each PUT waits for the data to physically reach the drive instead of acking from cache.
+
+#### When to set `fsync = false`
+
+Disabling `fsync` is a legitimate, deliberate choice when an acknowledged-then-lost write costs you nothing — i.e. the data is **regenerable**:
+
+- **Ephemeral / scratch data** — ML training shuffle buffers, intermediate or derived datasets, checkpoints you'd re-run on failure anyway. If a power cut means restarting the job regardless, durably persisting partial output buys nothing.
+- **Development, test, and CI** — throughput matters, durability does not.
+- **Cache tiers** — the system of record lives elsewhere; this deployment is a regenerable cache.
+
+```toml
+[durability]
+fsync = false   # throughput over power-fail durability — regenerable data only
+```
+
+:::warning
+With `fsync = false`, an acknowledged write can be **lost on power loss or an OS crash**, which breaks the S3 contract that a successful `PUT` is durable. Never use it for primary, system-of-record data. It is safe only when the data can be regenerated. See [Deployment Topologies & Minimums](./deployment-topologies.md) for the single-node/local case.
+:::
 
 ### Compression
 
