@@ -54,6 +54,8 @@ fsync = true                # crash-consistency on the local disk
 
 With one drive there is **no redundancy**. `fsync` protects acknowledged writes against a power-cut losing them from the OS page cache (crash-*consistency*), but it cannot protect against the drive itself failing. Erasure coding across a single drive only adds bitrot/partial-corruption protection, not device-loss protection. This is a development and test mode.
 
+**Throughput option for regenerable data:** on a local/scratch deployment whose data is regenerable (training scratch, intermediate data, dev/test, a cache), you can set `fsync = false` to trade the power-fail guarantee for substantially higher write throughput — large-object PUT can be several times faster. It does **not** affect process-crash safety (only power/OS-crash), so for jobs you'd restart after a power loss anyway it's often the right call. Never use it for primary data. See [Durability](./configuration.md#durability) for the full trade-off.
+
 ## 2. Single node, multiple drives (SNMD)
 
 ```toml
