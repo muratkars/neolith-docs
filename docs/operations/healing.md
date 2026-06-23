@@ -227,6 +227,62 @@ Background heal tasks use `tokio_util::sync::CancellationToken` for graceful shu
 
 No repair work is lost due to shutdown. The scanner will restart from the beginning of the cycle on next startup, and any corrupted objects will be re-discovered.
 
+## Failure Scenarios & Operator Response
+
+What a hardware failure actually does to your data depends on the placement invariant: in a multi-node cluster the **host is the failure domain**, so any given stripe has at most one shard on any one server. A server's many drives therefore hold shards belonging to thousands of *different* stripes, and losing a drive degrades each affected stripe by exactly one shard. See [Neocloud Multi-Region Storage](../use-cases/neocloud) for how this maps onto a regional topology and the durability formula.
+
+The table below summarizes severity for the default `RS(8,4)` scheme (12 shards, tolerates 4 losses). "Margin" is how many further shard losses a stripe can absorb before data loss.
+
+| Failure | Effect on an affected stripe | Data loss? | Availability | Operator action |
+|---|---|---|---|---|
+| Bitrot / bad sectors | 1 shard corrupt | No | Unaffected | None (auto-repaired) |
+| Single drive | 1 shard lost (4 -> 3 margin) | No | Unaffected | Replace drive, then rebalance |
+| Whole node | 1 shard lost on *many* stripes | No | Unaffected | Decommission if permanent |
+| Rack loss (4+ racks) | up to 3 shards lost | No | Unaffected | Restore rack, monitor heal |
+| Rack loss (3 racks) | 4 shards lost (0 margin) | No, but no headroom | Unaffected | Restore urgently |
+| 5+ shards before repair | stripe unrecoverable | Yes (local) | Local read fails | Recover from peer region |
+
+### Single drive failure (common case)
+
+A dead NVMe removes the shards stored on it, but because of the one-shard-per-host rule each affected stripe loses only one of its 12 shards (margin 4 -> 3).
+
+- **No data loss, no unavailability.** Reads transparently reconstruct from the surviving shards via [reactive healing](#reactive-healing-on-read).
+- The node still has its remaining drives and stays a valid failure domain, so the heal engine reconstructs the lost shards onto a surviving drive on the same node.
+- Operator: physically replace the NVMe, then repopulate and redistribute onto the fresh drive (see [After Drive Replacement](#after-drive-replacement)).
+
+### Bitrot and partial corruption (most frequent, least severe)
+
+A few flipped bits in a shard, without a drive failure, are caught by the per-shard BLAKE3 checksum on read or by the background scanner / deep scan. Only the corrupted shards are rebuilt. This is routine background activity and needs no operator action.
+
+### Whole-node failure
+
+A dead server removes one shard from *every* stripe that had a shard on it, so a large fraction of stripes drop to margin 3 at once. Still within the parity budget, so no loss, but the heal load is heavy and [throttling](#heal-throttling) governs its impact.
+
+- Transient (reboot): let the node rejoin; healing catches up automatically.
+- Permanent: decommission and reconstruct from parity.
+
+```bash
+# Node is dead: reconstruct its shards from parity on other nodes
+neolith admin decommission <node-endpoint> --force
+# After hardware replacement and rejoin, redistribute:
+neolith admin rebalance start
+```
+
+### Concurrent failures and the parity budget
+
+A stripe is lost only when **more than M (4) shards** are lost before repair completes. Because shards are spread across distinct hosts and racks, that requires several drives that each hold a shard of the *same* stripe to fail inside one repair window. This is the regime the durability formula quantifies (~15 nines for `RS(8,4)` against independent failures). The defenses are spread (more racks) and a short repair window, not more parity.
+
+### Rack, datacenter, or region loss
+
+Correlated site failures, not independent component failures, set the real durability ceiling:
+
+- **Rack loss** with 4+ racks per pool: each stripe loses at most 3 shards and survives with margin. With only 3 racks a stripe loses exactly 4 = M, which survives but with **zero headroom**: any concurrent drive failure during the rack-down window causes loss. Keep 4+ racks per pool for a fault-tolerant tier.
+- **Region or datacenter loss** beyond local parity: recovery comes from the asynchronous replica in a peer region (see [Replication & Tiering](../enterprise/replication)). Because replication is asynchronous (RPO > 0), the most recent un-replicated writes can be lost on failover.
+
+### MTTR is the operator's durability lever
+
+In the durability model `MTTDL` scales as `mu^M`, where `mu = 1 / MTTR`. MTTR is set almost entirely by how fast drives are replaced and how much heal I/O budget is allowed. Halving MTTR on `RS(8,4)` raises durability roughly 16x. Operational SLAs (replace a failed NVMe within a fixed window, keep the heal queue draining, keep 4+ racks live per pool) therefore determine the number of nines directly, and cost no extra storage.
+
 ## Operational Recommendations
 
 ### After Drive Replacement
