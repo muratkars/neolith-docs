@@ -18,7 +18,8 @@
         "use-cases/ml-training",
         "use-cases/model-serving",
         "use-cases/data-lake",
-        "use-cases/backup-archive"
+        "use-cases/backup-archive",
+        "use-cases/neocloud"
       ]
     },
     {
