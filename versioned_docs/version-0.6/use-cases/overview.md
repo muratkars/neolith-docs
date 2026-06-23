@@ -33,6 +33,12 @@ Protect critical data with erasure-coded storage, encryption at rest, and automa
 
 [Read more: Backup and Archive](./backup-archive)
 
+## Neocloud Multi-Region Storage
+
+Run an AWS S3-like service across multiple US regions on your own GPU-cloud hardware. Map your region / DC / rack / server / drive hierarchy onto Neolith failure domains, size erasure-coding schemes and EC sets, and tune durability with explicit formulas and adjustable variables.
+
+[Read more: Neocloud Multi-Region Storage](./neocloud)
+
 ## Migration Guides
 
 Already running MinIO or AWS S3? Neolith's S3 API compatibility makes migration straightforward.

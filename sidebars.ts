@@ -17,6 +17,7 @@ const sidebars: SidebarsConfig = {
         'use-cases/model-serving',
         'use-cases/data-lake',
         'use-cases/backup-archive',
+        'use-cases/neocloud',
       ],
     },
     {
