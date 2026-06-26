@@ -106,6 +106,58 @@ Label nodes with their physical topology so placement can spread across racks an
 | 3 nodes (RF=3 or RS 4+2) | ✅ | ✅ | ✅ (1) | ❌ |
 | Rack/zone-aware (labeled) | ✅ | ✅ | ✅ | ✅ |
 
+## Single-datacenter durability: a worked example
+
+The minimums above tell you *what survives*. This section works out *how many nines* a common single-DC build actually delivers, and why a single site caps the result no matter how wide your erasure code is. For the underlying durability formula (`MTTDL` and the conversion to nines) see [Neocloud Multi-Region Storage](../use-cases/neocloud#durability-formula-the-control-panel).
+
+**The build:** one datacenter, 3 racks x 3 servers = **9 hosts**, 12 NVMe drives each, scheme **RS(8,4)** (12 shards, tolerates 4 losses).
+
+### Step 1: check the placement fit first
+
+RS(8,4) is a 12-wide stripe, but you have only 9 hosts, and the **host is the failure domain** (one shard per host). 12 shards cannot be placed one-per-host on 9 hosts:
+
+- `placement_policy = "strict"` **refuses to start** (it needs at least `data_shards + parity_shards` = 12 hosts).
+- `placement_policy = "pack"` runs but stacks **2 shards on 3 of the hosts**, so a single server failure can cost 2 of the 12 shards.
+- With 3 racks the 12 shards spread **4 per rack**, so losing one rack removes exactly 4 = M shards: you survive a rack outage with **zero margin** (any further drive or host failure during the rack-down window is data loss).
+
+So this layout delivers RS(8,4) only in its weakest geometry. The numbers below reflect that.
+
+### Step 2: durability by failure mode
+
+Estimates use these assumptions (tune them for your hardware): NVMe drive AFR 1%/yr, whole-server AFR 3%/yr, rack-level (ToR/PDU) 2%/yr, repair time 8 h (drive) to 24 h (host/rack), and a single-facility catastrophic-loss rate of 0.1%/yr.
+
+| Failure mode | What the layout tolerates | Approx. durability |
+|---|---|---:|
+| Independent **drive** failures | any 4 of the 12 shard-drives | ~18 nines |
+| **Host** (server) failures | ~2 servers (the 2-shard hosts = 4 shards) | ~7 nines |
+| **Rack** failures | 1 rack (4 shards = M, **zero margin**) | ~5.5 nines |
+| **Datacenter** catastrophe | nothing (no copy elsewhere) | ~3 nines |
+
+### Step 3: combine
+
+Durability is dominated by the weakest term:
+
+```
+P_loss_total ~= P_DC + P_rack + P_host + P_drive
+             ~= 1e-3 + 3e-6 + 5e-8 + 3e-19
+             ~= 1e-3
+```
+
+- **End-to-end (honest, advertisable): ~3 nines.** The single datacenter sets the ceiling.
+- **Hardware-only, assuming the building survives: ~5 nines**, limited by the 3-rack zero-margin geometry, not the drives. The drives alone would give ~18 nines.
+
+The 4-parity erasure code is doing ~18-nine work against drive failures, but it is throttled down to ~5 by the rack layout and to ~3 by the single site. A single facility cannot exceed roughly 4 to 5 nines of durability regardless of stripe width, which is the same reason AWS S3 spreads every object across 3 or more Availability Zones.
+
+### Step 4: how to improve it
+
+| Change | Effect |
+|---|---|
+| **4 racks x 3 servers = 12 hosts** | RS(8,4) now fits one shard per host (`strict` works); 3 shards/rack means a rack loss leaves margin 1, not 0. Hardware durability rises to ~9-10 nines. |
+| **Add a second site** (even same metro) | Removes the ~3-nine datacenter ceiling and reaches 11+ nines. The only way past ~5 nines. See [Replication & Tiering](../enterprise/replication). |
+| **Add drives only** (to existing 9 hosts) | Adds capacity but **no** failure domains: durability is unchanged. Capacity and durability scale on different axes. |
+
+Bottom line: as specified (3 racks, 9 hosts, single DC, 8:4) you are at **~3 nines** end-to-end, ~5 if you count hardware only and trust the building. Going to **4 racks / 12 hosts** is nearly free and lifts hardware durability to ~9-10 nines; reaching S3-grade 11 nines requires at least one more independent site.
+
 :::note Roadmap
 The upcoming **segment store** (Phase 28: a replicated group-commit journal that acks on a quorum of `fsync`'d log appends, with background flush to erasure-coded stripes) changes the *small-object* write path but not these minimums — the journal is replication-based (needs failure domains) and the settled EC tier still needs `k + m` drives. The failure-domain-vs-drive distinction on this page carries forward unchanged.
 :::
