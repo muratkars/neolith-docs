@@ -29,6 +29,7 @@ const sidebars: SidebarsConfig = {
         'architecture/metadata',
         'architecture/erasure-coding',
         'architecture/cluster',
+        'architecture/placement',
         'architecture/consistency',
         'architecture/encryption',
         'architecture/compression',
