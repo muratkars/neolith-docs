@@ -133,6 +133,19 @@ pass, so an interrupted migration leaves reads on the old placement and a re-run
 resumes safely. `rebalance status` reports objects moved and completion. When
 there are no under-protected, now-fixable partitions, the pass is a no-op.
 
+A throttled **background pass** also runs the same migration automatically in
+cluster mode, so protection is restored without an operator triggering it. Its
+cadence is `[placement] respread_interval_secs` (default 300; set `0` to disable
+it and rely on `rebalance start` alone). Each cycle is a cheap no-op when there
+is nothing to fix, copy-ups are throttled with an inter-object delay so they do
+not starve foreground traffic, and the pass shuts down cleanly on stop.
+
+```toml
+[placement]
+tolerate = "auto"
+respread_interval_secs = 300  # 0 disables the background pass
+```
+
 ## OSS vs Enterprise
 
 `drive`, `drive:N`, and `node` tolerance are available in OSS. `rack` and `zone`
