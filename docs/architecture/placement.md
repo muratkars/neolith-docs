@@ -146,6 +146,24 @@ tolerate = "auto"
 respread_interval_secs = 300  # 0 disables the background pass
 ```
 
+### Reclaiming surplus copies
+
+Copy-up only adds copies; the old copies on nodes no longer in a partition's
+placement linger as harmless extra redundancy until reclaimed. The optional
+delete-old sweep reclaims that disk:
+
+```toml
+[placement]
+respread_delete_old = false  # opt-in; off by default
+```
+
+It is **off by default** because leftover copies are safe (just disk). When
+enabled, the sweep runs after copy-up and deletes a surplus local copy **only**
+when every node in the object's new placement confirms a copy at least as new,
+so the durable copy count never drops below the replication factor. Any
+placement node that is down, missing the copy, or holding a staler version fails
+the check and the copy is kept and retried on a later pass.
+
 ## OSS vs Enterprise
 
 `drive`, `drive:N`, and `node` tolerance are available in OSS. `rack` and `zone`
