@@ -334,9 +334,19 @@ aws --endpoint-url $ENDPOINT s3api complete-multipart-upload \
 echo "Upload complete!"
 ```
 
+## Durability (journal scheme)
+
+When the experimental journal storage scheme is enabled (`storage.scheme = "journal"`), multipart uploads are durable before completion and stitched without a reassembly buffer:
+
+- **Each part is erasure-coded into its own stripe** as it is uploaded, then `fsync`'d, so an in-flight upload survives a node restart: it stays listable, completable, and abortable.
+- **CompleteMultipartUpload is a metadata stitch.** The chosen part stripes are recorded, in order, as one multi-stripe object, with no whole-object buffer. The object reads back as its parts concatenated.
+- **Abort and TTL expiry free the staged stripes.** Re-uploading a part number replaces its stripe (last write wins).
+
+The default replicated scheme assembles the object at completion as described above. The journal scheme is opt-in and experimental.
+
 ## TTL and Cleanup
 
-Multipart uploads that are not completed or aborted within **24 hours** are automatically cleaned up by Neolith's background task. The in-memory `MultipartState` (a `HashMap<upload_id, MultipartUpload>`) tracks all active uploads.
+Multipart uploads that are not completed or aborted within **24 hours** are automatically cleaned up by Neolith's background task. The in-memory `MultipartState` (a `HashMap<upload_id, MultipartUpload>`) tracks all active uploads. Under the journal scheme, the same sweep also frees any erasure-coded part stripes a stale upload staged.
 
 ## Query Parameter Dispatch
 
