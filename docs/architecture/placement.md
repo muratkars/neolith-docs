@@ -82,6 +82,26 @@ go to the least-loaded domain, which converges to an even split: 12 shards over
 3 racks lands 4 / 4 / 4, not 6 / 3 / 3. Selection stays HRW-deterministic, so a
 topology change still reshuffles only about `1 / (N + 1)` of partitions.
 
+## Distinct drives within a node
+
+Placement resolves each shard to a `(node, drive)` target, not just a node. When
+more than one shard of an object lands on the same node (an erasure stripe on a
+cluster with fewer nodes than shards, or a single node with many drives), each
+shard is assigned a distinct drive, so losing one physical drive costs at most
+one shard. A single node with `N` drives can therefore hold a `k + m <= N` stripe
+on `k + m` distinct drives and tolerate any `m` drive losses; a small three-node
+cluster balances shards over the `(node, drive)` pairs so that any one drive, and
+within parity any one node, stays in budget.
+
+The drive is chosen deterministically from the partition and shard slot (no
+counters, clocks, or randomness), so a read recomputes the same `(node, drive)`
+the write chose. The first shard a node receives stays on drive 0, matching the
+pre-existing single-root layout, so the change is backward compatible and needs
+no data migration. Only when an object has more shards on a node than that node
+has drives do shards share a drive, and that placement is recorded as
+drive-under-protected (see Observing protection). Whole-object replication is
+unchanged: it places one copy per node, on drive 0.
+
 ## Pack vs strict
 
 When the enforced level cannot be met (too few domains for the scheme), the
@@ -100,7 +120,9 @@ recompute placement. To keep that correct when the cluster changes shape,
 Neolith stamps each partition with the cluster epoch and persists a
 deterministic topology snapshot per epoch. Reads resolve placement over the
 partition's *pinned* snapshot rather than the live topology, so adding or
-removing a node does not mislocate existing data. Until a partition has been
+removing a node does not mislocate existing data. Because the snapshot records
+each node's drives, the read resolves the same `(node, drive)` the write chose,
+not just the same node. Until a partition has been
 stamped, reads fall back to recomputing over the live topology (identical to the
 historical behavior), and read-repair plus HLC remain the safety net for the
 residual cross-epoch window. Snapshots are derived from the gossiped topology,
@@ -109,10 +131,14 @@ so they are identical on every node and need no extra coordination.
 ## Observing protection
 
 `GET /_neolith/admin/v1/placement/protection` reports how many tracked
-partitions are under-protected (a single failure domain holds more shards than
-the fault-tolerance budget), with the achieved tolerance level and a bounded
-sample. It also lists **re-spread candidates**: under-protected partitions that
-the current topology could now place better, for example after you add a rack.
+partitions are under-protected, with the achieved tolerance level and a bounded
+sample. A partition is under-protected when a single failure domain holds more
+shards than the fault-tolerance budget, or when two shards share one physical
+drive (`max_per_drive > 1`), the narrowest failure domain. Each sampled partition
+includes `max_per_domain`, `domains`, and `max_per_drive` so you can see whether
+the shortfall is at the domain or the drive level. The report also lists
+**re-spread candidates**: under-protected partitions that the current topology
+could now place better, for example after you add a rack.
 
 ## Re-spread: migrating onto a better placement
 
