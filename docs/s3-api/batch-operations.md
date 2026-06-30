@@ -304,3 +304,13 @@ AppState.batch: Option<Arc<BatchState>>
 ```
 
 The batch system is always-on (`AppState.batch` is always `Some`), with a background cleanup task managing expired epochs.
+
+## Storage scheme compatibility
+
+Batch operations behave the same under both storage schemes. Under `storage.scheme = "journal"`, a small object lives only in the replicated group-commit journal and never gets an on-disk metadata file, so the batch path resolves it journal-first:
+
+- Listing (when you do not pass explicit `keys`) reads the journal-aware listing cache, so journal-resident objects appear in batch GET and epoch results alongside meta-store objects.
+- The fetcher reads each object journal-first, then falls back to the meta store, so a journal-resident object is fetched rather than skipped.
+- The `content_type` filter reads each candidate's metadata journal-first. A metadata read that fails (I/O error or corruption) fails the request rather than silently dropping the object from the filtered set.
+
+Limitation: objects encrypted with SSE-C (a per-request customer key) cannot be returned by batch GET, because the batch request carries no channel for the customer key. Such an object is reported as a fetch error and excluded from the archive; retrieve it with a normal GET that supplies the key.
