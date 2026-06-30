@@ -227,6 +227,29 @@ Background heal tasks use `tokio_util::sync::CancellationToken` for graceful shu
 
 No repair work is lost due to shutdown. The scanner will restart from the beginning of the cycle on next startup, and any corrupted objects will be re-discovered.
 
+## Journal EC stripe scrub (experimental)
+
+The healing engine above repairs objects in the default replicated layout, which it discovers by scanning the metadata store. Under the experimental journal storage scheme (`storage.scheme = "journal"`), small objects are background-packed into erasure-coded stripes that the metadata-store scan does not see, so those stripes have their own scrub.
+
+A background pass verifies every live stripe's shards against the per-shard BLAKE3 checksums recorded in the stripe manifest, and regenerates any shard that is missing (lost drive) or corrupt (bitrot) via Reed-Solomon decode, writing it back to its recorded location. Without it, lost stripe shards would accumulate toward the parity budget with no recovery.
+
+- **Cadence.** `[journal] scrub_interval_secs` (default `86400`, daily; `0` disables; validated to be `0` or at least `segment_max_age_secs`). The scrub runs on the journal maintenance thread after the flush, compact, and reclaim steps.
+- **Bounded passes.** A full pass walks the live stripes in fixed-size chunks (one out-of-band command each), so the maintenance thread returns to serving writes between chunks instead of being held for the whole corpus. A monotonic stripe-id cursor advances across chunks, so coverage is complete without rescanning.
+- **Recoverability.** A stripe that has lost more shards than its parity budget can reconstruct is reported as unrecoverable and left untouched (the data is already lost; the scrub only surfaces it). This is the journal-scheme analogue of the "5+ shards before repair" row below.
+- **Transient errors are not data loss.** A shard that fails to read with a non-"not found" error (a failing drive returning EIO, a permission error) is treated as a scrub error for that stripe, not as a lost shard, so a flaky disk does not inflate the unrecoverable count.
+- **Reed-Solomon only.** Journal stripes are always Reed-Solomon; the scrub does not apply to the (replicated-path) LRC codec.
+
+Four metrics track each pass:
+
+| Metric | Meaning |
+|---|---|
+| `neolith_journal_stripe_scrub_stripes_total` | Stripes scanned by the scrub |
+| `neolith_journal_stripe_shards_repaired_total` | Shards regenerated (missing or bitrotten) |
+| `neolith_journal_stripe_unrecoverable_total` | Stripes found unrecoverable (alert on any increase: real durability loss) |
+| `neolith_journal_stripe_scrub_errors_total` | Stripes skipped due to a scrub error (I/O error or codec/descriptor drift; alert on any increase) |
+
+The journal scheme is opt-in and experimental; the default replicated path is unaffected.
+
 ## Failure Scenarios & Operator Response
 
 What a hardware failure actually does to your data depends on the placement invariant: in a multi-node cluster the **host is the failure domain**, so any given stripe has at most one shard on any one server. A server's many drives therefore hold shards belonging to thousands of *different* stripes, and losing a drive degrades each affected stripe by exactly one shard. See [Neocloud Multi-Region Storage](../use-cases/neocloud) for how this maps onto a regional topology and the durability formula.
