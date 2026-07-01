@@ -117,26 +117,35 @@ cells = ["cell-eu-west-1", "cell-eu-central-1"]
 
 ### Bucket-Level Residency
 
-Individual buckets can have residency constraints that restrict where their data is stored and replicated:
+Individual buckets can be pinned to a set of failure domains (zones and/or racks). Placement then only ever stores that bucket's replicas within the allowed domains:
 
 ```bash
-# Set residency constraint via bucket metadata
+# Pin a bucket to specific zones (and optionally racks)
 curl -X PUT http://localhost:9000/_neolith/admin/v1/buckets/eu-data/residency \
   -H "Content-Type: application/json" \
   -d '{
-    "allowed_regions": ["eu-west-1", "eu-central-1"],
-    "deny_cross_region_replication": true
+    "allowed_zones": ["eu-west-1a", "eu-west-1b"],
+    "allowed_racks": []
   }'
 ```
 
+An empty list for a dimension leaves it unconstrained (allow-all).
+
+> **Important:** enforcement is fail-closed. A node that does not carry a constrained label is treated as not allowed (its residency cannot be confirmed). If you pin a bucket to a `zone`/`rack` value that no cluster node actually carries (a typo, or nodes deployed without that label), **every** node becomes ineligible: new writes to the bucket are rejected and its existing objects become unreadable (reads and deletes resolve within the same allowed domains). Always set residency to labels your `[[cluster.nodes]]` topology actually declares, and set it before storing data.
+
 ### Residency Enforcement
 
-Residency constraints are enforced at multiple levels:
+Residency is enforced as a placement candidate filter (constrain-before, not a post-hoc reject): the allowed zones/racks restrict the candidate nodes before placement runs, so an object's copies only ever land in allowed domains.
 
-1. **Write path**: The proxy checks residency constraints before routing a write to a storage node. Writes that would violate residency are rejected with `403 ResidencyViolation`.
-2. **Replication**: The replication engine respects residency constraints. Data restricted to EU regions will not be replicated to US sites, even if a replication rule would otherwise require it.
-3. **Tiering**: Tier transitions are restricted to storage backends within the allowed regions.
-4. **Audit**: All residency constraint changes are logged in the tamper-evident audit log.
+1. **Write**: placement is restricted to the bucket's allowed domains. If those domains cannot satisfy the durability policy (replication factor and spread), the write is rejected with `507 Insufficient Storage`.
+2. **Read-repair and delete**: resolve the replica set within the same allowed domains, so they always reach the actual copies.
+3. **Background re-spread**: both the automatic re-spread pass and the manual `admin rebalance` stay within the allowed domains, so background migration never moves a pinned bucket out of its region.
+4. **Audit**: residency configuration changes are recorded in the tamper-evident audit log.
+
+Notes and limitations:
+
+- **Set residency before storing data.** Changing a bucket's residency after it already holds objects requires a migration (rebalance); until that runs, reads and deletes of objects placed under the previous policy may not resolve correctly.
+- **Scope**: applies to the replicated storage scheme (the default). The experimental journal scheme and the future cross-node erasure-coded path are handled separately.
 
 ## Compliance Reporting
 
