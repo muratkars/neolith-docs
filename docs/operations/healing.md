@@ -233,6 +233,8 @@ The healing engine above repairs objects in the default replicated layout, which
 
 A background pass verifies every live stripe's shards against the per-shard BLAKE3 checksums recorded in the stripe manifest, and regenerates any shard that is missing (lost drive) or corrupt (bitrot) via Reed-Solomon decode, writing it back to its recorded location. Without it, lost stripe shards would accumulate toward the parity budget with no recovery.
 
+Reads are protected between scrub passes too: a stripe read verifies each shard against its checksum and excludes any that is corrupt before decoding, so a bitrotten shard is reconstructed away from the surviving shards rather than decoded into silently wrong bytes. If too few healthy shards remain, the read fails loud (`InsufficientShards`) instead of returning corrupt data.
+
 - **Cadence.** `[journal] scrub_interval_secs` (default `86400`, daily; `0` disables; validated to be `0` or at least `segment_max_age_secs`). The scrub runs on the journal maintenance thread after the flush, compact, and reclaim steps.
 - **Bounded passes.** A full pass walks the live stripes in fixed-size chunks (one out-of-band command each), so the maintenance thread returns to serving writes between chunks instead of being held for the whole corpus. A monotonic stripe-id cursor advances across chunks, so coverage is complete without rescanning.
 - **Recoverability.** A stripe that has lost more shards than its parity budget can reconstruct is reported as unrecoverable and left untouched (the data is already lost; the scrub only surfaces it). This is the journal-scheme analogue of the "5+ shards before repair" row below.
