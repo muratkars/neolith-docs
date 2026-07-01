@@ -129,7 +129,9 @@ curl -X PUT http://localhost:9000/_neolith/admin/v1/buckets/eu-data/residency \
   }'
 ```
 
-An empty list for a dimension leaves it unconstrained (allow-all). A node that does not carry a constrained label is treated as not allowed (its residency cannot be confirmed), so the labels here must match the failure-domain labels configured on the cluster nodes.
+An empty list for a dimension leaves it unconstrained (allow-all).
+
+> **Important:** enforcement is fail-closed. A node that does not carry a constrained label is treated as not allowed (its residency cannot be confirmed). If you pin a bucket to a `zone`/`rack` value that no cluster node actually carries (a typo, or nodes deployed without that label), **every** node becomes ineligible: new writes to the bucket are rejected and its existing objects become unreadable (reads and deletes resolve within the same allowed domains). Always set residency to labels your `[[cluster.nodes]]` topology actually declares, and set it before storing data.
 
 ### Residency Enforcement
 
