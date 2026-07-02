@@ -131,7 +131,14 @@ curl -X PUT http://localhost:9000/_neolith/admin/v1/buckets/eu-data/residency \
 
 An empty list for a dimension leaves it unconstrained (allow-all).
 
-> **Important:** enforcement is fail-closed. A node that does not carry a constrained label is treated as not allowed (its residency cannot be confirmed). If you pin a bucket to a `zone`/`rack` value that no cluster node actually carries (a typo, or nodes deployed without that label), **every** node becomes ineligible: new writes to the bucket are rejected and its existing objects become unreadable (reads and deletes resolve within the same allowed domains). Always set residency to labels your `[[cluster.nodes]]` topology actually declares, and set it before storing data.
+The request is validated at set time and rejected with `400 Bad Request` if it is malformed or names a domain the cluster does not declare, so a typo cannot silently make the bucket unwritable:
+
+- **Structural:** blank/whitespace-only entries and duplicates within a list are rejected.
+- **Existence:** each `zone`/`rack` must match a label declared in `[[cluster.nodes]]`. A value no node carries (for example `eu-west-1z` instead of `eu-west-1a`) is rejected, and the error lists the declared labels. This check applies per dimension only when the cluster declares that dimension: on a cluster with no zone/rack labels (drive- or node-level only) any well-formed label is accepted, since there is nothing to check against.
+
+This is a best-effort set-time check, not a durable guarantee: the topology can change afterward (for example every node of an allowed zone is decommissioned), which the placement path still handles by refusing writes it cannot satisfy.
+
+> **Important:** enforcement is fail-closed. A node that does not carry a constrained label is treated as not allowed (its residency cannot be confirmed). If a bucket ends up pinned to a `zone`/`rack` value that no cluster node carries (for example nodes were later redeployed without that label), **every** node becomes ineligible: new writes to the bucket are rejected and its existing objects become unreadable (reads and deletes resolve within the same allowed domains). Set-time validation catches this at configuration time for labels the topology already declares; still set residency to labels your `[[cluster.nodes]]` topology actually declares, and set it before storing data.
 
 ### Residency Enforcement
 
