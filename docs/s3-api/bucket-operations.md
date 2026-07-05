@@ -18,11 +18,11 @@ PUT /<bucket-name> HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api create-bucket \
-  --bucket my-bucket
+mc alias set myn http://localhost:9000 ACCESS_KEY SECRET_KEY
+mc mb myn/my-bucket
 ```
 
 **curl (with awscurl):**
@@ -68,11 +68,10 @@ DELETE /<bucket-name> HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api delete-bucket \
-  --bucket my-bucket
+mc rb myn/my-bucket
 ```
 
 **curl:**
@@ -96,11 +95,10 @@ HEAD /<bucket-name> HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api head-bucket \
-  --bucket my-bucket
+mc ls myn/my-bucket
 ```
 
 **curl:**
@@ -124,10 +122,10 @@ GET / HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api list-buckets
+mc ls myn
 ```
 
 **curl:**
@@ -182,22 +180,17 @@ Host: localhost:9000
 | `marker` | Start listing after this key (pagination) | (none) |
 | `max-keys` | Maximum number of keys to return | 1000 |
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # List all objects in a bucket
-aws --endpoint-url http://localhost:9000 s3api list-objects \
-  --bucket my-bucket
+mc ls myn/my-bucket/
 
 # List with prefix filter
-aws --endpoint-url http://localhost:9000 s3api list-objects \
-  --bucket my-bucket \
-  --prefix "photos/2026/"
+mc ls myn/my-bucket/photos/2026/
 
 # List with delimiter (folder-like view)
-aws --endpoint-url http://localhost:9000 s3api list-objects \
-  --bucket my-bucket \
-  --delimiter "/"
+mc ls myn/my-bucket/
 ```
 
 **curl:**
@@ -256,23 +249,17 @@ Host: localhost:9000
 | `max-keys` | Maximum number of keys to return | 1000 |
 | `fetch-owner` | Include owner info in results | false |
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-# List objects v2
-aws --endpoint-url http://localhost:9000 s3api list-objects-v2 \
-  --bucket my-bucket
+# List objects
+mc ls myn/my-bucket/
 
-# Paginated listing
-aws --endpoint-url http://localhost:9000 s3api list-objects-v2 \
-  --bucket my-bucket \
-  --max-items 10
+# Paginated listing (fetch first 10 results)
+mc ls myn/my-bucket/ | head -10
 
-# With prefix and delimiter
-aws --endpoint-url http://localhost:9000 s3api list-objects-v2 \
-  --bucket my-bucket \
-  --prefix "logs/" \
-  --delimiter "/"
+# With prefix
+mc ls myn/my-bucket/logs/
 ```
 
 **curl:**

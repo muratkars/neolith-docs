@@ -46,12 +46,10 @@ for class_dir in os.listdir(train_dir):
         print(f"Uploaded: {key}")
 ```
 
-For large datasets, use the AWS CLI for faster parallel uploads:
+For large datasets, use mc for faster parallel uploads:
 
 ```bash
-aws --endpoint-url http://localhost:9000 \
-  s3 sync /path/to/imagenet/train/ s3://imagenet/train/ \
-  --exclude ".*"
+mc mirror /path/to/imagenet/train/ myn/imagenet/train/
 ```
 
 ## Step 2: Create the Dataset

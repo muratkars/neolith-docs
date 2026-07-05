@@ -153,10 +153,9 @@ Limitations:
 Best for: Isolating backup data from production data.
 
 ```bash
-# Periodic backup via aws-cli sync
-aws --endpoint-url http://localhost:9000 \
-  s3 sync s3://production-data/ s3://backup-production/ \
-  --delete
+# Periodic backup via mc mirror
+mc alias set myn http://localhost:9000 ACCESS_KEY SECRET_KEY
+mc mirror --overwrite myn/production-data/ myn/backup-production/
 ```
 
 Advantages:
@@ -175,10 +174,9 @@ For OSS deployments, use periodic sync between clusters:
 
 ```bash
 # Cron job: sync production cluster to DR cluster
-aws --endpoint-url http://production:9000 \
-  s3 sync s3://production-data/ - | \
-aws --endpoint-url http://dr-site:9000 \
-  s3 sync - s3://production-data-replica/
+mc alias set prod http://production:9000 KEY SECRET
+mc alias set dr http://dr-site:9000 KEY SECRET
+mc mirror --overwrite prod/production-data/ dr/production-data-replica/
 ```
 
 For Neolith Enterprise, cross-site replication is built-in and operates continuously.

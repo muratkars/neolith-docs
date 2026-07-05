@@ -14,7 +14,7 @@ Neolith is fully S3-compatible, which means any S3 client library works out of t
 | [PyTorch SDK](./python-pytorch) | ML training pipelines | Yes | Yes | Yes |
 | [AWS SDKs](./aws-sdk) (boto3, aws-sdk-s3, etc.) | General-purpose S3 operations | Yes | No | No |
 | [REST API](./rest-api) (curl, HTTP clients) | Scripting, debugging, low-level | Yes | Yes | Yes |
-| aws-cli | Ops, scripting, bucket management | Yes | No | No |
+| mc (MinIO Client) | Ops, scripting, bucket management | Yes | No | No |
 
 ## S3 Compatibility
 

@@ -16,33 +16,26 @@ During training, models produce checkpoints at regular intervals - often every e
 Enable versioning on your checkpoint bucket to retain every version of every checkpoint file:
 
 ```bash
+# First time setup
+mc alias set myn http://neolith:9000 ACCESS_KEY SECRET_KEY
+
 # Enable versioning
-aws --endpoint-url http://neolith:9000 s3api put-bucket-versioning \
-  --bucket model-checkpoints \
-  --versioning-configuration Status=Enabled
+mc version enable myn/model-checkpoints
 
 # Upload checkpoints (each overwrites the same key, but all versions are retained)
-aws --endpoint-url http://neolith:9000 s3 cp checkpoint_epoch_10.pt \
-  s3://model-checkpoints/resnet50/latest.pt
+mc cp checkpoint_epoch_10.pt myn/model-checkpoints/resnet50/latest.pt
 
-aws --endpoint-url http://neolith:9000 s3 cp checkpoint_epoch_20.pt \
-  s3://model-checkpoints/resnet50/latest.pt
+mc cp checkpoint_epoch_20.pt myn/model-checkpoints/resnet50/latest.pt
 ```
 
 With versioning enabled, every PUT creates a new version. You can list and retrieve any previous version:
 
 ```bash
 # List all versions of a checkpoint
-aws --endpoint-url http://neolith:9000 s3api list-object-versions \
-  --bucket model-checkpoints \
-  --prefix resnet50/latest.pt
+mc ls --versions myn/model-checkpoints/resnet50/latest.pt
 
 # Retrieve a specific version
-aws --endpoint-url http://neolith:9000 s3api get-object \
-  --bucket model-checkpoints \
-  --key resnet50/latest.pt \
-  --version-id "abc123" \
-  checkpoint_restored.pt
+mc cp --version-id "abc123" myn/model-checkpoints/resnet50/latest.pt checkpoint_restored.pt
 ```
 
 ### Checkpoint Organization
@@ -73,27 +66,24 @@ Bucket forks create lightweight copy-on-write branches, making them ideal for A/
 
 ```bash
 # Production model bucket
-aws --endpoint-url http://neolith:9000 s3 cp production_v2.pt \
-  s3://serving-models/classifier/model.pt
+mc cp production_v2.pt myn/serving-models/classifier/model.pt
 
 # Fork for A/B test - instant, no data copy
 curl -X POST http://neolith:9000/serving-models?fork \
   -d '{"name": "serving-models-candidate"}'
 
 # Upload candidate model to the fork only
-aws --endpoint-url http://neolith:9000 s3 cp candidate_v3.pt \
-  s3://serving-models-candidate/classifier/model.pt
+mc cp candidate_v3.pt myn/serving-models-candidate/classifier/model.pt
 
 # Inference server A reads from: s3://serving-models/classifier/model.pt
 # Inference server B reads from: s3://serving-models-candidate/classifier/model.pt
 
 # If candidate wins, promote it
-aws --endpoint-url http://neolith:9000 s3 cp \
-  s3://serving-models-candidate/classifier/model.pt \
-  s3://serving-models/classifier/model.pt
+mc cp myn/serving-models-candidate/classifier/model.pt \
+  myn/serving-models/classifier/model.pt
 
 # Clean up the fork
-aws --endpoint-url http://neolith:9000 s3 rb s3://serving-models-candidate --force
+mc rb --force myn/serving-models-candidate
 ```
 
 This pattern extends naturally to canary deployments, shadow testing, and multi-armed bandit model selection.
@@ -135,8 +125,7 @@ Native transforms (like `to-json-meta`) run in-process. WASM transforms run in a
 Distribute model weights to inference servers, edge devices, or external partners without exposing your storage credentials:
 
 ```bash
-aws --endpoint-url http://neolith:9000 s3 presign \
-  s3://serving-models/classifier/model.pt --expires-in 3600
+mc share download --expire 1h myn/serving-models/classifier/model.pt
 ```
 
 Presigned URLs support GET (download) and PUT (upload), with up to 7-day expiry. Authentication is embedded in query-string SigV4 parameters - no headers required, so the URL works in any HTTP client. Revoking the signing credentials invalidates all outstanding URLs. For sensitive models, combine with SSE-C encryption so the URL alone is not sufficient to read the data.
@@ -146,25 +135,27 @@ Presigned URLs support GET (download) and PUT (upload), with up to 7-day expiry.
 Training produces many checkpoints, but only a few are worth keeping long-term. Lifecycle rules automate cleanup:
 
 ```bash
-# Set lifecycle rules on the checkpoint bucket
-aws --endpoint-url http://neolith:9000 s3api put-bucket-lifecycle-configuration \
-  --bucket model-checkpoints \
-  --lifecycle-configuration '{
-    "Rules": [
-      {
-        "ID": "expire-old-checkpoints",
-        "Status": "Enabled",
-        "Filter": {"Prefix": ""},
-        "Expiration": {"Days": 30}
-      },
-      {
-        "ID": "expire-noncurrent-versions",
-        "Status": "Enabled",
-        "Filter": {"Prefix": ""},
-        "NoncurrentVersionExpiration": {"NoncurrentDays": 7}
-      }
-    ]
-  }'
+# Write lifecycle config to a file, then import it
+cat > lifecycle.json << 'EOF'
+{
+  "Rules": [
+    {
+      "ID": "expire-old-checkpoints",
+      "Status": "Enabled",
+      "Filter": {"Prefix": ""},
+      "Expiration": {"Days": 30}
+    },
+    {
+      "ID": "expire-noncurrent-versions",
+      "Status": "Enabled",
+      "Filter": {"Prefix": ""},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 7}
+    }
+  ]
+}
+EOF
+
+mc ilm import myn/model-checkpoints < lifecycle.json
 ```
 
 This configuration:

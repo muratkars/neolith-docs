@@ -116,21 +116,22 @@ Server-side ETL transforms can also reduce data movement by applying field extra
 Data analysts and data scientists often need to experiment with transformations, test new schemas, or explore subsets of data. Bucket forks provide isolated workspaces without duplicating data:
 
 ```bash
+# First time setup
+mc alias set myn http://neolith:9000 ACCESS_KEY SECRET_KEY
+
 # Create a fork for an analyst's exploration
 curl -X POST http://neolith:9000/data-lake?fork \
   -d '{"name": "data-lake-analysis-q1"}'
 
 # Analyst can write derived tables to the fork
-aws --endpoint-url http://neolith:9000 s3 cp aggregated.parquet \
-  s3://data-lake-analysis-q1/derived/user_cohorts.parquet
+mc cp aggregated.parquet myn/data-lake-analysis-q1/derived/user_cohorts.parquet
 
 # Fork reads from parent for any key not overridden
 # So queries against the fork see: original data + analyst's additions
 
 # When done, either promote useful artifacts or delete the fork
-aws --endpoint-url http://neolith:9000 s3 cp \
-  s3://data-lake-analysis-q1/derived/user_cohorts.parquet \
-  s3://data-lake/curated/user_cohorts.parquet
+mc cp myn/data-lake-analysis-q1/derived/user_cohorts.parquet \
+  myn/data-lake/curated/user_cohorts.parquet
 ```
 
 ### Use Cases for Forks
@@ -147,30 +148,32 @@ aws --endpoint-url http://neolith:9000 s3 cp \
 Data lakes accumulate data rapidly. Lifecycle rules automate tiering and expiration:
 
 ```bash
-aws --endpoint-url http://neolith:9000 s3api put-bucket-lifecycle-configuration \
-  --bucket data-lake \
-  --lifecycle-configuration '{
-    "Rules": [
-      {
-        "ID": "expire-raw-zone",
-        "Status": "Enabled",
-        "Filter": {"Prefix": "raw/"},
-        "Expiration": {"Days": 90}
-      },
-      {
-        "ID": "expire-temp-zone",
-        "Status": "Enabled",
-        "Filter": {"Prefix": "temp/"},
-        "Expiration": {"Days": 7}
-      },
-      {
-        "ID": "keep-curated-versions",
-        "Status": "Enabled",
-        "Filter": {"Prefix": "curated/"},
-        "NoncurrentVersionExpiration": {"NoncurrentDays": 365}
-      }
-    ]
-  }'
+cat > lifecycle.json << 'EOF'
+{
+  "Rules": [
+    {
+      "ID": "expire-raw-zone",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "raw/"},
+      "Expiration": {"Days": 90}
+    },
+    {
+      "ID": "expire-temp-zone",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "temp/"},
+      "Expiration": {"Days": 7}
+    },
+    {
+      "ID": "keep-curated-versions",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "curated/"},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 365}
+    }
+  ]
+}
+EOF
+
+mc ilm import myn/data-lake < lifecycle.json
 ```
 
 ### Recommended Data Lake Layout

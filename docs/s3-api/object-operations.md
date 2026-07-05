@@ -23,37 +23,20 @@ x-amz-meta-<name>: <value>         (optional, custom metadata)
 x-amz-server-side-encryption: AES256  (optional, SSE-S3)
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # Simple upload
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key documents/report.pdf \
-  --body report.pdf \
-  --content-type application/pdf
+mc cp report.pdf myn/my-bucket/documents/report.pdf
 
 # Upload with custom metadata
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key data/sensor.csv \
-  --body sensor.csv \
-  --content-type text/csv \
-  --metadata '{"project":"alpha","source":"iot-gateway"}'
+mc cp --attr "project=alpha;source=iot-gateway" sensor.csv myn/my-bucket/data/sensor.csv
 
-# Upload with SSE-S3 encryption
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key secrets/config.enc \
-  --body config.json \
-  --server-side-encryption AES256
+# Upload with SSE-S3 encryption (encryption applied server-side when configured)
+mc cp config.json myn/my-bucket/secrets/config.enc
 
-# Upload with Content-MD5 validation
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key data/file.bin \
-  --body file.bin \
-  --content-md5 "$(openssl md5 -binary file.bin | base64)"
+# Upload (mc validates checksums automatically)
+mc cp file.bin myn/my-bucket/data/file.bin
 ```
 
 **curl (with awscurl):**
@@ -119,28 +102,17 @@ If-Modified-Since: <date>        (optional)
 If-Unmodified-Since: <date>      (optional)
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # Download an object
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket my-bucket \
-  --key documents/report.pdf \
-  output.pdf
+mc cp myn/my-bucket/documents/report.pdf output.pdf
 
-# Download with range
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket my-bucket \
-  --key data/large-file.bin \
-  --range "bytes=0-1023" \
-  first-1kb.bin
+# Download with range (use curl for partial content)
+curl -H "Range: bytes=0-1023" http://localhost:9000/my-bucket/data/large-file.bin -o first-1kb.bin
 
 # Get specific version
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket my-bucket \
-  --key config.json \
-  --version-id "abc123" \
-  config-old.json
+mc cp --version-id "abc123" myn/my-bucket/config.json config-old.json
 
 # Get SSE-C encrypted object
 aws --endpoint-url http://localhost:9000 s3api get-object \
@@ -203,12 +175,10 @@ HEAD /<bucket>/<key> HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api head-object \
-  --bucket my-bucket \
-  --key documents/report.pdf
+mc stat myn/my-bucket/documents/report.pdf
 ```
 
 **curl:**
@@ -243,19 +213,14 @@ DELETE /<bucket>/<key> HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # Delete an object
-aws --endpoint-url http://localhost:9000 s3api delete-object \
-  --bucket my-bucket \
-  --key old-file.txt
+mc rm myn/my-bucket/old-file.txt
 
 # Delete a specific version
-aws --endpoint-url http://localhost:9000 s3api delete-object \
-  --bucket my-bucket \
-  --key config.json \
-  --version-id "abc123"
+mc rm --version-id "abc123" myn/my-bucket/config.json
 ```
 
 **curl:**
@@ -291,20 +256,14 @@ Host: localhost:9000
 x-amz-copy-source: /<source-bucket>/<source-key>
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # Copy within a bucket
-aws --endpoint-url http://localhost:9000 s3api copy-object \
-  --bucket my-bucket \
-  --key backup/report.pdf \
-  --copy-source my-bucket/documents/report.pdf
+mc cp myn/my-bucket/documents/report.pdf myn/my-bucket/backup/report.pdf
 
 # Copy across buckets
-aws --endpoint-url http://localhost:9000 s3api copy-object \
-  --bucket archive-bucket \
-  --key 2026/report.pdf \
-  --copy-source my-bucket/documents/report.pdf
+mc cp myn/my-bucket/documents/report.pdf myn/archive-bucket/2026/report.pdf
 
 # Copy with SSE-C (source and destination keys)
 aws --endpoint-url http://localhost:9000 s3api copy-object \
@@ -341,12 +300,9 @@ Neolith supports the four standard conditional request headers on GET and HEAD:
 | `If-Unmodified-Since` | Return object only if NOT modified after the given date. Otherwise `412 Precondition Failed`. |
 
 ```bash
-# Conditional GET: only download if changed
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket my-bucket \
-  --key data.json \
-  --if-none-match '"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"' \
-  data.json
+# Conditional GET: only download if changed (use curl for conditional headers)
+curl -H 'If-None-Match: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"' \
+  http://localhost:9000/my-bucket/data.json -o data.json
 
 # Conditional PUT: only overwrite if ETag matches (optimistic concurrency)
 awscurl --service s3 --region us-east-1 \
@@ -384,16 +340,11 @@ Store custom metadata using `x-amz-meta-` prefixed headers. Metadata keys are ca
 
 ```bash
 # Set custom metadata on upload
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key datasets/training.tar \
-  --body training.tar \
-  --metadata '{"epoch":"42","model":"resnet50","dataset-version":"3.1"}'
+mc cp --attr "epoch=42;model=resnet50;dataset-version=3.1" \
+  training.tar myn/my-bucket/datasets/training.tar
 
-# Retrieve metadata with HEAD
-aws --endpoint-url http://localhost:9000 s3api head-object \
-  --bucket my-bucket \
-  --key datasets/training.tar
+# Retrieve metadata with stat
+mc stat myn/my-bucket/datasets/training.tar
 ```
 
 Response includes:

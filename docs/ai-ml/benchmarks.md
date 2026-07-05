@@ -153,8 +153,11 @@ Operation Log:
 # Start the server
 neolith server start /mnt/bench{1...4}
 
+# Configure mc alias (once)
+mc alias set myn http://localhost:9000 YOUR_ACCESS_KEY YOUR_SECRET_KEY
+
 # Create benchmark bucket
-aws --endpoint-url http://localhost:9000 s3 mb s3://bench
+mc mb myn/bench
 ```
 
 ### Benchmark Workflow

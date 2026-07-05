@@ -18,32 +18,26 @@ Neolith listens on a single port (default `9000`) and serves both the S3 API and
 
 To use virtual-hosted-style addressing, configure the `endpoint_domain` in your server config (e.g., `localhost`). The virtual-host middleware runs after SigV4 authentication so that signatures are computed against the original URI.
 
-### Quick Start with AWS CLI
+### Quick Start with mc
 
 ```bash
-# Configure credentials
-aws configure set aws_access_key_id YOUR_ACCESS_KEY
-aws configure set aws_secret_access_key YOUR_SECRET_KEY
-aws configure set default.region us-east-1
-
-# Use Neolith as endpoint
-alias s3='aws --endpoint-url http://localhost:9000 s3'
-alias s3api='aws --endpoint-url http://localhost:9000 s3api'
+# Configure mc alias for Neolith
+mc alias set myn http://localhost:9000 YOUR_ACCESS_KEY YOUR_SECRET_KEY
 
 # Create a bucket and upload a file
-s3 mb s3://my-bucket
-s3 cp photo.jpg s3://my-bucket/photo.jpg
+mc mb myn/my-bucket
+mc cp photo.jpg myn/my-bucket/photo.jpg
 ```
 
 ### Quick Start with curl
 
 ```bash
 # Neolith supports standard SigV4 signing.
-# For quick testing, use the aws-cli or an SDK.
+# For quick testing, use mc or an SDK.
 # Direct curl requires SigV4 signature computation (see Authentication page).
 
-# List buckets (requires SigV4 - use aws-cli for convenience)
-aws --endpoint-url http://localhost:9000 s3api list-buckets
+# List buckets (requires SigV4 - use mc for convenience)
+mc ls myn
 ```
 
 ## Compatibility Matrix

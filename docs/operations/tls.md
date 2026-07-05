@@ -298,10 +298,9 @@ s3 = boto3.client(
 )
 ```
 
-**aws-cli:**
+**mc:**
 
 ```bash
-aws --endpoint-url https://neolith.example.com:9000 \
-    --ca-bundle /path/to/ca.pem \
-    s3 ls
+mc alias set myn https://neolith.example.com:9000 ACCESS_KEY SECRET_KEY
+mc ls myn
 ```

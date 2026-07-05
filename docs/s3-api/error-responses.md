@@ -86,10 +86,7 @@ x-amz-id-2: neolith
 ### NoSuchBucket
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket nonexistent-bucket \
-  --key file.txt \
-  output.txt
+mc cp myn/nonexistent-bucket/file.txt output.txt
 ```
 
 ```xml
@@ -105,10 +102,7 @@ aws --endpoint-url http://localhost:9000 s3api get-object \
 ### NoSuchKey
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket my-bucket \
-  --key does-not-exist.txt \
-  output.txt
+mc cp myn/my-bucket/does-not-exist.txt output.txt
 ```
 
 ```xml
@@ -125,8 +119,8 @@ aws --endpoint-url http://localhost:9000 s3api get-object \
 ### AccessDenied (Invalid Credentials)
 
 ```bash
-AWS_ACCESS_KEY_ID=wrong AWS_SECRET_ACCESS_KEY=wrong \
-aws --endpoint-url http://localhost:9000 s3api list-buckets
+mc alias set bad http://localhost:9000 wrong wrong
+mc ls bad
 ```
 
 ```xml

@@ -282,77 +282,36 @@ client.delete_object()
     .await?;
 ```
 
-## AWS CLI
+## mc (MinIO Client)
 
 ### Configuration
 
-Configure a named profile for your Neolith server:
+Create an alias pointing to your Neolith server (run once):
 
 ```bash
-# Configure credentials
-aws configure --profile neolith
-# Enter your access key and secret key when prompted
-
-# Or set environment variables
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
+mc alias set myn http://localhost:9000 your-access-key your-secret-key
 ```
 
 ### Usage
 
-Always pass `--endpoint-url` to point to your Neolith server:
-
 ```bash
 # Create a bucket
-aws --endpoint-url http://localhost:9000 s3 mb s3://my-bucket
+mc mb myn/my-bucket
 
 # Upload a file
-aws --endpoint-url http://localhost:9000 s3 cp model.pt s3://my-bucket/models/
+mc cp model.pt myn/my-bucket/models/
 
 # Download a file
-aws --endpoint-url http://localhost:9000 s3 cp s3://my-bucket/models/model.pt ./
+mc cp myn/my-bucket/models/model.pt ./
 
 # List objects
-aws --endpoint-url http://localhost:9000 s3 ls s3://my-bucket/models/
+mc ls myn/my-bucket/models/
 
-# Sync a directory
-aws --endpoint-url http://localhost:9000 s3 sync ./data/ s3://my-bucket/data/
+# Mirror a directory
+mc mirror ./data/ myn/my-bucket/data/
 
 # Remove a file
-aws --endpoint-url http://localhost:9000 s3 rm s3://my-bucket/models/old-model.pt
-```
-
-### Shell Aliases
-
-For convenience, create a shell alias:
-
-```bash
-# In ~/.bashrc or ~/.zshrc
-alias ns3='aws --endpoint-url http://localhost:9000 s3'
-alias ns3api='aws --endpoint-url http://localhost:9000 s3api'
-
-# Usage
-ns3 ls s3://my-bucket/
-ns3api put-object --bucket my-bucket --key test.txt --body test.txt
-```
-
-### AWS CLI v2 Endpoint Configuration
-
-AWS CLI v2 supports endpoint URLs in the config file:
-
-```ini
-# ~/.aws/config
-[profile neolith]
-endpoint_url = http://localhost:9000
-region = us-east-1
-s3 =
-    signature_version = s3v4
-```
-
-Then use the profile:
-
-```bash
-aws --profile neolith s3 ls s3://my-bucket/
+mc rm myn/my-bucket/models/old-model.pt
 ```
 
 ## Node.js (@aws-sdk/client-s3)
