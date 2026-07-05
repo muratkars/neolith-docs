@@ -55,9 +55,11 @@ The first milestone of the multi-exabyte architecture-hardening track makes the 
 - **Journal stripe reads verify shard checksums** (opt-in journal scheme): a flushed-object read now checks each EC stripe shard against its recorded BLAKE3 checksum and excludes any corrupt shard before Reed-Solomon decode. Previously a present-but-bitrotten shard was decoded as-is, which could return silently corrupted bytes; reads now reconstruct correct data from the surviving shards, or fail loud with `InsufficientShards` if too few healthy shards remain, never returning corrupt data. Complements the background stripe scrub (which repairs on a cadence) with read-time integrity. See [Healing](./operations/healing.md#journal-ec-stripe-scrub-experimental).
 - **New documentation**: see [Placement and Durability](./architecture/placement.md) for the failure-domain model, the `tolerate` target, and re-spread, and [Deployment Topologies & Minimums](./operations/deployment-topologies.md) for drive/node minimums per topology and what each topology survives.
 
-### Enterprise: S3 over RDMA / RoCEv2 (Phase E)
+### Enterprise: S3 over RDMA / RoCEv2 (Phase E - complete)
 
-- **neolith-rdma crate**: New `neolith-rdma` enterprise crate implementing the full RDMA/RoCEv2 transport layer. `RdmaManager` provides `pull_from_client` (PUT — RDMA READ) and `push_to_client` (GET — RDMA WRITE) with transparent TCP fallback.
+RDMA-1 through RDMA-3 shipped with the initial v0.6.0 release (2026-04-25). RDMA-4 and RDMA-5 shipped in the Enterprise update (2026-04-29). All 5 RDMA features are complete.
+
+- **neolith-rdma crate**: New `neolith-rdma` enterprise crate implementing the full RDMA/RoCEv2 transport layer. `RdmaManager` provides `pull_from_client` (PUT - RDMA READ) and `push_to_client` (GET - RDMA WRITE) with transparent TCP fallback.
 - **Dual-transport architecture**: HTTP/S3 control plane always available; RDMA data plane activated per-request via `x-neolith-rdma-*` headers. Standard AWS SDKs continue to work unchanged on the TCP path.
 - **Per-cell configuration**: Enable RDMA per cell via environment variables (`NEOLITH_RDMA_ENABLED=true`) or Kubernetes CRD (`spec.network.rdmaEnabled: true`). Cells without RDMA enabled are unaffected.
 - **Automatic TCP fallback**: `NEOLITH_RDMA_FALLBACK_TCP=true` (default) — any RDMA setup failure silently falls back to the HTTP body path. Set to `false` only in validated environments.
@@ -66,6 +68,8 @@ The first milestone of the multi-exabyte architecture-hardening track makes the 
 - **Admin API**: `GET /_neolith/admin/v1/rdma/status`, `GET /_neolith/admin/v1/rdma/devices`, `POST /_neolith/rdma/connect`, `POST /_neolith/rdma/disconnect/{id}`.
 - **Prometheus metrics**: 11 new RDMA metrics covering bytes transferred, operation counts, fallback reasons, QP state, MR pool utilization, and CQ overflows.
 - **Minimum object threshold**: Objects below `NEOLITH_RDMA_MIN_OBJ_KB` (default 256 KiB) always use TCP — RDMA setup overhead is not worth it for small objects.
+- **KV Cache RDMA Transport** (RDMA-4, AI tier): `BlockTransport` trait with `get_block`/`put_block`/`is_rdma`. `HttpBlockTransport` (reqwest) and `RdmaBlockTransport` (Arc\<RdmaManager\>, lazy QP connect, auto-fallback to HTTP). `TransportKind` enum dispatch. `KvRdmaConfig` in `KvConfig`. `G4Prefetcher` upgraded with `with_rdma()` constructor.
+- **GPU-Direct RDMA wiring** (RDMA-5, AI tier): `IbverbsGpuEngine` implements `GpuDirectEngine` via `Arc<RdmaManager>` (RDMA READ/WRITE + file I/O fallback). `GpuEngineKind::select()` fallback tower (ibverbs → mock). `GpuTopology::discover()` with `nic_affinity_score()` + `best_gpu_for_nic()`. Linux x86_64/aarch64 cfg-gate.
 
 ### Breaking Changes
 
@@ -77,10 +81,14 @@ The first milestone of the multi-exabyte architecture-hardening track makes the 
 
 - **neolith-rdma**: RDMA/RoCEv2 transport layer with `RdmaManager`, `IbverbsTransport`, `MockRdmaTransport`, and Prometheus metrics (Enterprise)
 
+### Docs
+
+- All user-facing CLI examples migrated from aws-cli to mc (MinIO Client). Use `mc alias set myn http://localhost:9000 KEY SECRET` to configure the `myn` alias; every `aws --endpoint-url` command in the quickstart, S3 API reference, and use-case guides has a direct mc equivalent. SSE-C, CORS, S3 Select, multipart low-level, and object-lock examples retain aws s3api (no mc equivalent for those operations).
+
 ### Stats
 
-- 120/120 OSS features complete
-- 57/60 Enterprise features complete (RDMA-1 through RDMA-3 shipped; RDMA-4, RDMA-5 in progress)
+- 120/120 OSS features complete (Phase 28 architecture hardening ongoing)
+- 59/60 Enterprise features complete (all 5 RDMA features shipped)
 - 1,025+ tests, zero clippy warnings
 
 ---
