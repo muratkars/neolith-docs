@@ -298,6 +298,7 @@ The following environment variables are recognized:
 | `NEOLITH_MASTER_KEY` | SSE-S3 master encryption key (hex) | CLI `--master-key` |
 | `NEOLITH_ENDPOINT` | Admin CLI endpoint (default: `http://localhost:9000`) | CLI `--endpoint` |
 | `NEOLITH_EDITION` | Edition override: `oss`, `enterprise`, or `ai` | Config `edition` |
+| `NEOLITH_ADVERTISE` | This node's advertised cluster endpoint (per-node override for shared config files, e.g. injected per pod by the Kubernetes operator) | Config `cluster.advertise` |
 
 Environment variables take precedence over config file values for credentials.
 
