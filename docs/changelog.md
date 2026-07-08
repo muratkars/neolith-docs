@@ -10,6 +10,21 @@ All notable changes to Neolith are documented here. Each release includes highli
 
 ---
 
+## Documentation: neo client reference
+
+**Added: 2026-07-08**
+
+The [neo client](./neo/overview.md), Neolith's native command-line client, is now fully documented. `neo` (versioned independently of the server) has reached a complete command surface, and the docs previously described it as early-development. The new "neo Client" section covers:
+
+- **Overview and install**: what `neo` is, why to use it over `aws s3` or `mc`, and Homebrew / pre-built binary / source install paths.
+- **[S3 commands](./neo/s3-commands.md)**: `alias`, `cp`, `ls`, `mb`/`rb`, `rm`, `stat`, `sync` (including `--checksum` content diff and `--concurrency`), `presign`, and `completions`.
+- **[Neolith commands](./neo/neolith-commands.md)**: `batch get`/`batch epoch`, `fork create`/`ls`/`diff`/`merge`, `etl register`/`ls`/`run`/`rm`, and `dataset peek`/`schema`/`sample`, each cross-linked to the underlying server API.
+- **[Configuration](./neo/configuration.md)**: the `~/.config/neo/config.toml` format, aliases, profiles, and addressing styles.
+
+The Quickstart now points at `neo` as the recommended day-to-day client.
+
+---
+
 ## v0.6.0 - Limits and Beyond
 
 **Released: 2026-04-25** | **Enterprise update: 2026-04-29**

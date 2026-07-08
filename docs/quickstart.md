@@ -51,8 +51,8 @@ Neolith speaks the S3 API, so any S3 client works. This guide uses the AWS CLI p
 With AWS CLI v2.13+ you can `export AWS_ENDPOINT_URL=http://localhost:9000` once and drop the `--endpoint-url` flag from every command below.
 :::
 
-:::note Neolith-native client
-[`neo`](https://github.com/muratkars/neo) is Neolith's own client — `neo mb`, `neo cp`, `neo batch get`, bucket forks, and ML dataset inspection as first-class commands. It is in **early development** (commands are landing incrementally), so until it's ready, use the AWS CLI (shown here) or `mc`.
+:::tip Neolith-native client
+[`neo`](./neo/overview.md) is Neolith's own client: `neo mb`, `neo cp`, `neo batch get`, bucket forks, and ML dataset inspection as first-class commands. It works against any S3 endpoint and surfaces the Neolith-only features that generic clients cannot reach. This guide uses the AWS CLI because it is S3-generic, but for day-to-day Neolith work `neo` is the recommended client: see the [neo Client](./neo/overview.md) docs.
 :::
 
 ## Create a Bucket
