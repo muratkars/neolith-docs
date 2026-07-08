@@ -10,6 +10,15 @@ All notable changes to Neolith are documented here. Each release includes highli
 
 ---
 
+## Unreleased
+
+- **Public Docker image**: `ghcr.io/muratkars/neolith` is now published on every merge to main (`latest`) and on releases (semver tags). Built with `etl-wasm` + `iouring`; the web console ships in the enterprise image only. See [Installation](/docs/installation#docker).
+- **Release binaries**: tagged releases now attach `neolith-linux-x86_64` and `neolith-linux-aarch64` assets (used by the neolith-k8s Ansible bare-metal deploy).
+- **`NEOLITH_ADVERTISE`**: per-node override for `cluster.advertise`, for deployments where all nodes share one config file (Kubernetes ConfigMaps, baked images). See [Configuration](/docs/operations/configuration).
+- **Kubernetes deployment tooling**: the new [neolith-k8s](https://github.com/muratkars/neolith-k8s) repo ships the operator, Helm charts, Ansible playbooks, and Terraform modules (Apache 2.0).
+
+---
+
 ## v0.6.0 - Limits and Beyond
 
 **Released: 2026-04-25** | **Enterprise update: 2026-04-29**
