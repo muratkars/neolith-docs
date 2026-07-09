@@ -70,6 +70,16 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'neo Client',
+      items: [
+        'neo/overview',
+        'neo/s3-commands',
+        'neo/neolith-commands',
+        'neo/configuration',
+      ],
+    },
+    {
+      type: 'category',
       label: 'SDKs & Integration',
       items: [
         'sdk/overview',

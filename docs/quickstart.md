@@ -48,8 +48,8 @@ mc alias set myn http://localhost:9000 ACCESS_KEY SECRET_KEY
 
 This guide uses the alias `myn` (short for "my neolith") throughout.
 
-:::note Neolith-native client
-[`neo`](https://github.com/muratkars/neo) is Neolith's native S3 client - all standard S3 operations plus `neo batch get`, bucket forks, ETL transforms, and ML dataset inspection.
+:::tip Neolith-native client
+[`neo`](./neo/overview.md) is Neolith's native S3 client: all standard S3 operations plus `neo batch get`, bucket forks, ETL transforms, and ML dataset inspection as first-class commands. It works against any S3 endpoint and surfaces the Neolith-only features that generic clients cannot reach. This guide uses `mc` because it is S3-generic, but for day-to-day Neolith work `neo` is the recommended client: see the [neo Client](./neo/overview.md) docs.
 :::
 
 ## Create a Bucket

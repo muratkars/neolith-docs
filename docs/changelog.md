@@ -12,6 +12,7 @@ All notable changes to Neolith are documented here. Each release includes highli
 
 ## Unreleased
 
+- **neo client documentation**: the [neo client](./neo/overview.md), Neolith's native command-line client, is now fully documented in a new "neo Client" section covering install and overview, [S3 commands](./neo/s3-commands.md) (`alias`, `cp`, `ls`, `mb`/`rb`, `rm`, `stat`, `sync`, `presign`, `completions`), [Neolith-only commands](./neo/neolith-commands.md) (`batch`, `fork`, `etl`, `dataset`, cross-linked to the underlying server APIs), and [configuration](./neo/configuration.md). `neo` versions independently of the server; the docs previously described it as early-development, and the Quickstart now recommends it as the day-to-day client.
 - **Public Docker image**: `ghcr.io/muratkars/neolith` is now published on every merge to main (`latest`) and on releases (semver tags). Built with `etl-wasm` + `iouring`; the web console ships in the enterprise image only. See [Installation](/docs/installation#docker).
 - **Release binaries**: tagged releases now attach `neolith-linux-x86_64` and `neolith-linux-aarch64` assets (used by the neolith-k8s Ansible bare-metal deploy).
 - **`NEOLITH_ADVERTISE`**: per-node override for `cluster.advertise`, for deployments where all nodes share one config file (Kubernetes ConfigMaps, baked images). See [Configuration](/docs/operations/configuration).
