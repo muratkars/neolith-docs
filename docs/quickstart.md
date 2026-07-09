@@ -10,7 +10,11 @@ Get up and running with Neolith in 5 minutes. This guide covers single-node setu
 ## Prerequisites
 
 - Neolith binary installed (see [Installation](/docs/installation))
-- AWS CLI v2 installed (`brew install awscli` or `apt install awscli`)
+- `mc` (MinIO Client) installed:
+  ```bash
+  brew install minio/stable/mc   # macOS
+  # wget https://dl.min.io/client/mc/release/linux-amd64/mc && chmod +x mc && sudo mv mc /usr/local/bin/   # Linux
+  ```
 
 ## Start a Single-Node Server
 
@@ -24,7 +28,7 @@ neolith server start /data/neolith
 You should see output like:
 
 ```
-[INFO] Neolith v0.4.0
+[INFO] Neolith v0.6.0
 [INFO] SIMD: AVX2 detected
 [INFO] Erasure coding: RS(8,4)
 [INFO] Data path: /data/neolith
@@ -33,40 +37,33 @@ You should see output like:
 
 Neolith is now running and accepting S3 requests on port 9000.
 
-## Configure the AWS CLI
+## Configure mc
 
-Point the AWS CLI at your Neolith instance. When running without authentication (development mode), any credentials will work:
+`mc` (MinIO Client) is a lightweight S3-compatible CLI. Configure an alias pointing at your Neolith instance - when running without authentication (development mode), any credentials will work:
 
 ```bash
-aws configure
-# AWS Access Key ID: test
-# AWS Secret Access Key: test
-# Default region name: us-east-1
-# Default output format: json
+# Configure alias (replace URL, KEY, SECRET with your values)
+mc alias set myn http://localhost:9000 ACCESS_KEY SECRET_KEY
 ```
 
-Neolith speaks the S3 API, so any S3 client works. This guide uses the AWS CLI pointed at your local endpoint with `--endpoint-url`.
-
-:::tip Tip
-With AWS CLI v2.13+ you can `export AWS_ENDPOINT_URL=http://localhost:9000` once and drop the `--endpoint-url` flag from every command below.
-:::
+This guide uses the alias `myn` (short for "my neolith") throughout.
 
 :::tip Neolith-native client
-[`neo`](./neo/overview.md) is Neolith's own client: `neo mb`, `neo cp`, `neo batch get`, bucket forks, and ML dataset inspection as first-class commands. It works against any S3 endpoint and surfaces the Neolith-only features that generic clients cannot reach. This guide uses the AWS CLI because it is S3-generic, but for day-to-day Neolith work `neo` is the recommended client: see the [neo Client](./neo/overview.md) docs.
+[`neo`](./neo/overview.md) is Neolith's native S3 client: all standard S3 operations plus `neo batch get`, bucket forks, ETL transforms, and ML dataset inspection as first-class commands. It works against any S3 endpoint and surfaces the Neolith-only features that generic clients cannot reach. This guide uses `mc` because it is S3-generic, but for day-to-day Neolith work `neo` is the recommended client: see the [neo Client](./neo/overview.md) docs.
 :::
 
 ## Create a Bucket
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3 mb s3://my-bucket
-# make_bucket: my-bucket
+mc mb myn/my-bucket
+# Bucket created successfully `myn/my-bucket`.
 ```
 
 List buckets:
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3 ls
-# 2026-03-17 10:00:00 my-bucket
+mc ls myn
+# [2026-03-17 10:00:00]     0B my-bucket/
 ```
 
 ## Upload and Download Objects
@@ -75,21 +72,21 @@ Upload a file:
 
 ```bash
 echo "Hello, Neolith!" > hello.txt
-aws --endpoint-url http://localhost:9000 s3 cp hello.txt s3://my-bucket/hello.txt
-# upload: ./hello.txt to s3://my-bucket/hello.txt
+mc cp hello.txt myn/my-bucket/hello.txt
+# ...hello.txt: 16 B / 16 B
 ```
 
 List objects in the bucket:
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3 ls s3://my-bucket/
-# 2026-03-17 10:01:00   16 hello.txt
+mc ls myn/my-bucket/
+# [2026-03-17 10:01:00]    16B hello.txt
 ```
 
 Download the file:
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3 cp s3://my-bucket/hello.txt downloaded.txt
+mc cp myn/my-bucket/hello.txt downloaded.txt
 cat downloaded.txt
 # Hello, Neolith!
 ```
@@ -97,7 +94,7 @@ cat downloaded.txt
 ## Upload a Directory
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3 cp /path/to/dataset/ s3://my-bucket/dataset/ --recursive
+mc cp --recursive /path/to/dataset/ myn/my-bucket/dataset/
 ```
 
 ## Enable Authentication
@@ -118,12 +115,10 @@ export NEOLITH_SECRET_KEY=mysupersecretkey
 neolith server start /data/neolith
 ```
 
-Update the AWS CLI credentials:
+Update mc credentials:
 
 ```bash
-aws configure
-# AWS Access Key ID: myaccesskey
-# AWS Secret Access Key: mysupersecretkey
+mc alias set myn http://localhost:9000 myaccesskey mysupersecretkey
 ```
 
 Requests without valid credentials will now return `403 Forbidden`.
@@ -151,8 +146,8 @@ The master key is a 32-byte hex string (64 hex characters). Each object gets a u
 Objects are encrypted transparently - the S3 API works exactly the same:
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3 cp secret.txt s3://my-bucket/secret.txt
-aws --endpoint-url http://localhost:9000 s3 cp s3://my-bucket/secret.txt decrypted.txt
+mc cp secret.txt myn/my-bucket/secret.txt
+mc cp myn/my-bucket/secret.txt decrypted.txt
 # Files are identical - encryption/decryption is automatic
 ```
 
@@ -182,7 +177,7 @@ curl http://localhost:9000/_neolith/v1/info | jq .
 
 ```json
 {
-  "version": "0.4.0",
+  "version": "0.6.0",
   "edition": "oss",
   "uptime_seconds": 120,
   "drives": ["/mnt/disk1", "/mnt/disk2", "/mnt/disk3", "/mnt/disk4"]

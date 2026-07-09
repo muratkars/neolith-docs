@@ -151,7 +151,7 @@ Use bucket forks to create lightweight, copy-on-write branches of a training dat
 curl -X POST http://neolith:9000/imagenet?fork -d '{"name": "imagenet-augmented"}'
 
 # Add augmented data to the fork (original dataset unchanged)
-aws --endpoint-url http://neolith:9000 s3 cp augmented/ s3://imagenet-augmented/ --recursive
+mc cp --recursive augmented/ myn/imagenet-augmented/
 
 # Train on the augmented fork
 dataset = NeolithDataset(endpoint="http://neolith:9000", bucket="imagenet-augmented", ...)

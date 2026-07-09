@@ -21,14 +21,10 @@ neolith server start
 neolith server start --access-key myaccesskey --secret-key mysecretkey
 ```
 
-Configure the AWS CLI or SDKs to use these credentials:
+Configure mc to use these credentials:
 
 ```bash
-aws configure
-# AWS Access Key ID: myaccesskey
-# AWS Secret Access Key: mysecretkey
-# Default region name: us-east-1
-# Default output format: json
+mc alias set myn http://localhost:9000 myaccesskey mysecretkey
 ```
 
 ## Signature Version 4 (Authorization Header)
@@ -109,26 +105,17 @@ awscurl --service s3 \
   http://localhost:9000/
 ```
 
-### AWS CLI Examples
+### mc Examples
 
 ```bash
-# All aws commands use the --endpoint-url flag
-export AWS_ENDPOINT_URL=http://localhost:9000
-
 # List buckets
-aws --endpoint-url $AWS_ENDPOINT_URL s3api list-buckets
+mc ls myn
 
 # Put object
-aws --endpoint-url $AWS_ENDPOINT_URL s3api put-object \
-  --bucket my-bucket \
-  --key hello.txt \
-  --body hello.txt
+mc cp hello.txt myn/my-bucket/hello.txt
 
 # Get object
-aws --endpoint-url $AWS_ENDPOINT_URL s3api get-object \
-  --bucket my-bucket \
-  --key hello.txt \
-  output.txt
+mc cp myn/my-bucket/hello.txt output.txt
 ```
 
 ## Presigned URLs
@@ -151,10 +138,8 @@ The auth middleware checks query-string parameters before falling back to the `A
 ### Generate a Presigned URL
 
 ```bash
-# Generate a presigned GET URL valid for 1 hour (3600 seconds)
-aws --endpoint-url http://localhost:9000 s3 presign \
-  s3://my-bucket/photo.jpg \
-  --expires-in 3600
+# Generate a presigned GET URL valid for 1 hour
+mc share download --expire 1h myn/my-bucket/photo.jpg
 
 # Output:
 # http://localhost:9000/my-bucket/photo.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=...
@@ -227,7 +212,7 @@ export AWS_SECRET_ACCESS_KEY=temporary-secret-key
 export AWS_SESSION_TOKEN=session-token-value
 
 # Use normally
-aws --endpoint-url http://localhost:9000 s3 ls
+mc ls myn
 ```
 
 When using raw HTTP requests, include the `x-amz-security-token` header:

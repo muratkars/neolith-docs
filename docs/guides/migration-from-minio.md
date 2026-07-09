@@ -31,7 +31,7 @@ Neolith supports the core S3 API surface that MinIO applications rely on. Most c
 
 | Feature | MinIO | Neolith | Migration Path |
 |---|---|---|---|
-| MinIO Client (mc) | Native | Not supported | Use aws-cli or rclone |
+| MinIO Client (mc) | Native | Not supported | Use rclone or mc (configure a Neolith alias) |
 | Admin API | MinIO proprietary | Neolith admin API | Update admin scripts |
 | ILM tiering | Built-in | Not yet available | Use lifecycle expiration |
 | Bucket notifications | SNS/SQS/Kafka/etc. | HTTP webhooks | Update notification targets |
@@ -124,13 +124,20 @@ done
 
 rclone handles retries, checksums, and parallel transfers automatically. Use `--transfers 16` to increase parallelism for large migrations.
 
-### Option 2: aws s3 sync
+### Option 2: mc mirror
 
-If you prefer the AWS CLI, use a local staging area:
+If you prefer mc, configure aliases for both servers (run once) and use a local staging area:
 
 ```bash
-aws --endpoint-url http://minio:9000 s3 sync s3://my-bucket /tmp/staging/
-aws --endpoint-url http://neolith:9000 s3 sync /tmp/staging/ s3://my-bucket/
+# Set up mc aliases
+mc alias set minio http://minio:9000 minioadmin minioadmin
+mc alias set myn http://neolith:9000 neolithadmin neolithadmin
+
+# Copy from MinIO to local staging
+mc mirror minio/my-bucket /tmp/staging/my-bucket/
+
+# Copy from staging to Neolith
+mc mirror /tmp/staging/my-bucket/ myn/my-bucket/
 ```
 
 ### Migration Verification

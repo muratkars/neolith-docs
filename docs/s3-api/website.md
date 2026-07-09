@@ -65,7 +65,7 @@ aws --endpoint-url http://localhost:9000 s3api put-bucket-website \
   }'
 
 # Upload website content
-aws --endpoint-url http://localhost:9000 s3 sync ./build/ s3://my-website/
+mc mirror ./build/ myn/my-website/
 
 # Access via website endpoint
 curl http://my-website.localhost:9000/

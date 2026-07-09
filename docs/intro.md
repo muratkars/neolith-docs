@@ -38,12 +38,15 @@ Neolith uses a symmetric peer-to-peer architecture where every node is identical
 # Start a single-node server
 neolith server start /data
 
+# Configure mc alias (once)
+mc alias set myn http://localhost:9000 ACCESS_KEY SECRET_KEY
+
 # Create a bucket and upload a file
-aws --endpoint-url http://localhost:9000 s3 mb s3://my-bucket
-aws --endpoint-url http://localhost:9000 s3 cp myfile.txt s3://my-bucket/
+mc mb myn/my-bucket
+mc cp myfile.txt myn/my-bucket/
 
 # Download the file
-aws --endpoint-url http://localhost:9000 s3 cp s3://my-bucket/myfile.txt ./downloaded.txt
+mc cp myn/my-bucket/myfile.txt ./downloaded.txt
 ```
 
 ## What's Next?

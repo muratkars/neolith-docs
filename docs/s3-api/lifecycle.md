@@ -32,7 +32,7 @@ Content-Type: application/xml
 </LifecycleConfiguration>
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # Create a lifecycle configuration file
@@ -74,9 +74,7 @@ cat > lifecycle.json << 'EOF'
 EOF
 
 # Apply lifecycle configuration
-aws --endpoint-url http://localhost:9000 s3api put-bucket-lifecycle-configuration \
-  --bucket my-bucket \
-  --lifecycle-configuration file://lifecycle.json
+mc ilm import myn/my-bucket < lifecycle.json
 ```
 
 **curl:**
@@ -92,11 +90,10 @@ awscurl --service s3 --region us-east-1 \
 
 ### GetBucketLifecycleConfiguration
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api get-bucket-lifecycle-configuration \
-  --bucket my-bucket
+mc ilm export myn/my-bucket
 ```
 
 **Response (200 OK):**
@@ -129,11 +126,10 @@ aws --endpoint-url http://localhost:9000 s3api get-bucket-lifecycle-configuratio
 
 ### DeleteBucketLifecycleConfiguration
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api delete-bucket-lifecycle \
-  --bucket my-bucket
+mc ilm rm --all --force myn/my-bucket
 ```
 
 **curl:**
@@ -236,46 +232,25 @@ Lifecycle configuration is stored as a `.lifecycle.json` sidecar file in the buc
 ### Log Retention (30 days)
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api put-bucket-lifecycle-configuration \
-  --bucket logs-bucket \
-  --lifecycle-configuration '{
-    "Rules": [{
-      "ID": "log-retention",
-      "Status": "Enabled",
-      "Filter": {"Prefix": ""},
-      "Expiration": {"Days": 30}
-    }]
-  }'
+mc ilm import myn/logs-bucket << 'EOF'
+{"Rules":[{"ID":"log-retention","Status":"Enabled","Filter":{"Prefix":""},"Expiration":{"Days":30}}]}
+EOF
 ```
 
 ### Temp File Cleanup (24 hours)
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api put-bucket-lifecycle-configuration \
-  --bucket staging-bucket \
-  --lifecycle-configuration '{
-    "Rules": [{
-      "ID": "temp-cleanup",
-      "Status": "Enabled",
-      "Filter": {"Prefix": "tmp/"},
-      "Expiration": {"Days": 1}
-    }]
-  }'
+mc ilm import myn/staging-bucket << 'EOF'
+{"Rules":[{"ID":"temp-cleanup","Status":"Enabled","Filter":{"Prefix":"tmp/"},"Expiration":{"Days":1}}]}
+EOF
 ```
 
 ### Version History Retention (keep 90 days of noncurrent versions)
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api put-bucket-lifecycle-configuration \
-  --bucket versioned-bucket \
-  --lifecycle-configuration '{
-    "Rules": [{
-      "ID": "version-cleanup",
-      "Status": "Enabled",
-      "Filter": {"Prefix": ""},
-      "NoncurrentVersionExpiration": {"NoncurrentDays": 90}
-    }]
-  }'
+mc ilm import myn/versioned-bucket << 'EOF'
+{"Rules":[{"ID":"version-cleanup","Status":"Enabled","Filter":{"Prefix":""},"NoncurrentVersionExpiration":{"NoncurrentDays":90}}]}
+EOF
 ```
 
 ## Limitations

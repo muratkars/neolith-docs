@@ -21,18 +21,14 @@ Content-Type: application/xml
 </VersioningConfiguration>
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # Enable versioning
-aws --endpoint-url http://localhost:9000 s3api put-bucket-versioning \
-  --bucket my-bucket \
-  --versioning-configuration Status=Enabled
+mc version enable myn/my-bucket
 
 # Suspend versioning (preserves existing versions, stops creating new ones)
-aws --endpoint-url http://localhost:9000 s3api put-bucket-versioning \
-  --bucket my-bucket \
-  --versioning-configuration Status=Suspended
+mc version suspend myn/my-bucket
 ```
 
 **curl:**
@@ -48,11 +44,10 @@ awscurl --service s3 --region us-east-1 \
 
 ## Getting Versioning Status
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api get-bucket-versioning \
-  --bucket my-bucket
+mc version info myn/my-bucket
 ```
 
 **Response (200 OK):**
@@ -97,10 +92,7 @@ Versioning state is stored in a `.versioning.json` sidecar file in the bucket di
 When you upload an object to a versioned bucket, the response includes the version ID:
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key config.json \
-  --body config-v1.json
+mc cp config-v1.json myn/my-bucket/config.json
 ```
 
 **Response:**
@@ -115,10 +107,7 @@ aws --endpoint-url http://localhost:9000 s3api put-object \
 Upload another version:
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key config.json \
-  --body config-v2.json
+mc cp config-v2.json myn/my-bucket/config.json
 ```
 
 ```json
@@ -130,21 +119,14 @@ aws --endpoint-url http://localhost:9000 s3api put-object \
 
 ## Retrieving Specific Versions
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # Get latest version (default)
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket my-bucket \
-  --key config.json \
-  latest.json
+mc cp myn/my-bucket/config.json latest.json
 
 # Get a specific version
-aws --endpoint-url http://localhost:9000 s3api get-object \
-  --bucket my-bucket \
-  --key config.json \
-  --version-id "abc123def456" \
-  old-version.json
+mc cp --version-id "abc123def456" myn/my-bucket/config.json old-version.json
 ```
 
 **curl:**
@@ -158,17 +140,14 @@ awscurl --service s3 --region us-east-1 \
 
 ## Listing Object Versions
 
-**AWS CLI:**
+**mc:**
 
 ```bash
 # List all versions of all objects
-aws --endpoint-url http://localhost:9000 s3api list-object-versions \
-  --bucket my-bucket
+mc ls --versions myn/my-bucket
 
 # List versions with prefix filter
-aws --endpoint-url http://localhost:9000 s3api list-object-versions \
-  --bucket my-bucket \
-  --prefix "config"
+mc ls --versions myn/my-bucket/config
 ```
 
 **Response (200 OK):**
@@ -207,9 +186,7 @@ When you delete an object in a versioned bucket, Neolith does not remove the dat
 
 ```bash
 # Delete an object (creates a delete marker)
-aws --endpoint-url http://localhost:9000 s3api delete-object \
-  --bucket my-bucket \
-  --key config.json
+mc rm myn/my-bucket/config.json
 ```
 
 **Response:**
@@ -244,16 +221,10 @@ To permanently remove a specific version (including delete markers), specify the
 
 ```bash
 # Permanently delete a specific version
-aws --endpoint-url http://localhost:9000 s3api delete-object \
-  --bucket my-bucket \
-  --key config.json \
-  --version-id "abc123def456"
+mc rm --version-id "abc123def456" myn/my-bucket/config.json
 
 # Remove a delete marker (restores the object)
-aws --endpoint-url http://localhost:9000 s3api delete-object \
-  --bucket my-bucket \
-  --key config.json \
-  --version-id "mno345pqr678"
+mc rm --version-id "mno345pqr678" myn/my-bucket/config.json
 ```
 
 ## Versioning with Lifecycle Rules

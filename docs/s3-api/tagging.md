@@ -44,19 +44,10 @@ Content-Type: application/xml
 </Tagging>
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api put-object-tagging \
-  --bucket my-bucket \
-  --key reports/q1-2026.pdf \
-  --tagging '{
-    "TagSet": [
-      {"Key": "environment", "Value": "production"},
-      {"Key": "department", "Value": "engineering"},
-      {"Key": "classification", "Value": "internal"}
-    ]
-  }'
+mc tag set myn/my-bucket/reports/q1-2026.pdf "environment=production&department=engineering&classification=internal"
 ```
 
 **curl:**
@@ -93,12 +84,10 @@ GET /<bucket>/<key>?tagging HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api get-object-tagging \
-  --bucket my-bucket \
-  --key reports/q1-2026.pdf
+mc tag list myn/my-bucket/reports/q1-2026.pdf
 ```
 
 **curl:**
@@ -151,12 +140,10 @@ DELETE /<bucket>/<key>?tagging HTTP/1.1
 Host: localhost:9000
 ```
 
-**AWS CLI:**
+**mc:**
 
 ```bash
-aws --endpoint-url http://localhost:9000 s3api delete-object-tagging \
-  --bucket my-bucket \
-  --key reports/q1-2026.pdf
+mc tag remove myn/my-bucket/reports/q1-2026.pdf
 ```
 
 **curl:**
@@ -242,11 +229,7 @@ You can set tags when uploading an object using the `x-amz-tagging` header:
 
 ```bash
 # Upload with tags
-aws --endpoint-url http://localhost:9000 s3api put-object \
-  --bucket my-bucket \
-  --key data/input.csv \
-  --body input.csv \
-  --tagging "project=alpha&status=new"
+mc cp --tags "project=alpha&status=new" input.csv myn/my-bucket/data/input.csv
 ```
 
 The `--tagging` value uses URL query string format: `key1=value1&key2=value2`.

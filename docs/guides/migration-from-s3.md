@@ -73,16 +73,22 @@ rclone check aws:my-bucket neolith:my-bucket --one-way
 
 For large datasets (multi-TB), run rclone on an EC2 instance in the same region as your S3 bucket to avoid cross-region transfer costs, then copy from that instance to your Neolith cluster.
 
-### Strategy 2: aws s3 sync
+### Strategy 2: mc mirror
 
-The AWS CLI works directly against Neolith:
+mc works directly against Neolith. First, set up mc aliases (run once):
+
+```bash
+mc alias set myn http://neolith:9000 neolithadmin neolithadmin
+```
+
+Then copy from S3 to Neolith via a local staging area:
 
 ```bash
 # Copy from S3 to local staging
 aws s3 sync s3://my-bucket /mnt/staging/my-bucket
 
 # Copy from staging to Neolith
-aws --endpoint-url http://neolith:9000 s3 sync /mnt/staging/my-bucket s3://my-bucket
+mc mirror /mnt/staging/my-bucket myn/my-bucket/
 ```
 
 ### Strategy 3: Incremental Migration
@@ -180,13 +186,11 @@ s3 = boto3.client('s3', endpoint_url='http://neolith:9000',
     region_name='us-east-1')  # region is required by boto3 but the value does not matter
 ```
 
-### AWS CLI
+### mc
 
 ```bash
-export AWS_ACCESS_KEY_ID=neolithadmin
-export AWS_SECRET_ACCESS_KEY=neolithadmin
-export AWS_ENDPOINT_URL=http://neolith:9000
-aws s3 ls
+mc alias set myn http://neolith:9000 neolithadmin neolithadmin
+mc ls myn
 ```
 
 For additional SDK examples (Go, Rust, JavaScript), see the [SDK documentation](/docs/sdk/overview).

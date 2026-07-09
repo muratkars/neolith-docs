@@ -47,8 +47,8 @@ export NEOLITH_MASTER_KEY="your-256-bit-hex-key"
 neolith server start /data
 
 # Upload with SSE-S3 encryption
-aws --endpoint-url http://neolith:9000 s3 cp backup.tar.gz s3://backups/ \
-  --sse AES256
+mc alias set myn http://neolith:9000 ACCESS_KEY SECRET_KEY
+mc cp backup.tar.gz myn/backups/backup.tar.gz
 ```
 
 Encryption details:
@@ -95,9 +95,7 @@ Versioning retains every version of every object, enabling recovery from acciden
 
 ```bash
 # Enable versioning on the backup bucket
-aws --endpoint-url http://neolith:9000 s3api put-bucket-versioning \
-  --bucket backups \
-  --versioning-configuration Status=Enabled
+mc version enable myn/backups
 ```
 
 ### Recovery Scenarios
@@ -106,18 +104,13 @@ aws --endpoint-url http://neolith:9000 s3api put-bucket-versioning \
 
 ```bash
 # Oops - accidentally deleted a backup
-aws --endpoint-url http://neolith:9000 s3 rm s3://backups/database-daily.sql.gz
+mc rm myn/backups/database-daily.sql.gz
 
 # List versions to find it
-aws --endpoint-url http://neolith:9000 s3api list-object-versions \
-  --bucket backups \
-  --prefix database-daily.sql.gz
+mc ls --versions myn/backups/database-daily.sql.gz
 
 # Restore by deleting the delete marker
-aws --endpoint-url http://neolith:9000 s3api delete-object \
-  --bucket backups \
-  --key database-daily.sql.gz \
-  --version-id "delete-marker-version-id"
+mc rm --version-id "delete-marker-version-id" myn/backups/database-daily.sql.gz
 ```
 
 **Accidental overwrite**: Use `get-object --version-id` to retrieve the specific version from before the overwrite.
@@ -129,32 +122,34 @@ aws --endpoint-url http://neolith:9000 s3api delete-object \
 Lifecycle rules enforce retention policies without manual intervention:
 
 ```bash
-aws --endpoint-url http://neolith:9000 s3api put-bucket-lifecycle-configuration \
-  --bucket backups \
-  --lifecycle-configuration '{
-    "Rules": [
-      {
-        "ID": "daily-backup-retention",
-        "Status": "Enabled",
-        "Filter": {"Prefix": "daily/"},
-        "Expiration": {"Days": 30},
-        "NoncurrentVersionExpiration": {"NoncurrentDays": 7}
-      },
-      {
-        "ID": "weekly-backup-retention",
-        "Status": "Enabled",
-        "Filter": {"Prefix": "weekly/"},
-        "Expiration": {"Days": 365},
-        "NoncurrentVersionExpiration": {"NoncurrentDays": 30}
-      },
-      {
-        "ID": "archive-retention",
-        "Status": "Enabled",
-        "Filter": {"Prefix": "archive/"},
-        "NoncurrentVersionExpiration": {"NoncurrentDays": 2555}
-      }
-    ]
-  }'
+cat > lifecycle.json << 'EOF'
+{
+  "Rules": [
+    {
+      "ID": "daily-backup-retention",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "daily/"},
+      "Expiration": {"Days": 30},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 7}
+    },
+    {
+      "ID": "weekly-backup-retention",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "weekly/"},
+      "Expiration": {"Days": 365},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 30}
+    },
+    {
+      "ID": "archive-retention",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "archive/"},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 2555}
+    }
+  ]
+}
+EOF
+
+mc ilm import myn/backups < lifecycle.json
 ```
 
 ### Retention Strategy
@@ -181,8 +176,7 @@ curl -X POST http://neolith:9000/production-data?fork \
 # Any changes to production-data do NOT affect the fork
 
 # If the migration goes wrong, read from the snapshot
-aws --endpoint-url http://neolith:9000 s3 cp \
-  s3://production-data-snapshot-20260328/critical-table.parquet ./restored.parquet
+mc cp myn/production-data-snapshot-20260328/critical-table.parquet ./restored.parquet
 
 # Clean up old snapshots with lifecycle rules or manual deletion
 ```
