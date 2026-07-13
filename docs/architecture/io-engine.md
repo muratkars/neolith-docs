@@ -18,7 +18,7 @@ pub enum IoEngineKind {
 }
 ```
 
-The engine is created once at startup and shared across all request handlers via `Arc<IoEngineKind>` in `AppState`.
+The engine is selected once at startup by `create_engine()`. In the current release the durability-critical write paths (journal segment appends, erasure-coded shard flush, metadata store) intentionally use direct synchronous I/O with explicit fsync rather than routing through the engine: correctness first, on any platform. Routing those hot paths through the io_uring engine is the subject of the modernization roadmap below.
 
 Note: The `IoEngine` trait uses Return Position Impl Trait in Traits (RPITIT) rather than `async_trait` or `dyn` dispatch. This means the trait is not object-safe, which is why `IoEngineKind` is an enum.
 
@@ -116,29 +116,18 @@ let bytes_read = cqe.result();
 
 ### Communication Protocol
 
-Each I/O request is an `IoRequest` containing:
+Each I/O request is a `UringOp` variant carrying the target path, any data, and a reply channel:
 
 ```rust
-struct IoRequest {
-    op: IoOp,                           // Read or Write
-    fd: RawFd,                          // File descriptor
-    buf: Vec<u8>,                       // Data buffer
-    offset: u64,                        // File offset
-    reply: oneshot::Sender<IoResult>,   // Reply channel
-}
-
-enum IoOp {
-    Read { len: usize },
-    Write,
-}
-
-struct IoResult {
-    buf: Vec<u8>,                       // Returned buffer (for reads)
-    result: Result<usize, io::Error>,   // Bytes transferred or error
+enum UringOp {
+    Write { path: PathBuf, data: Vec<u8>, reply: oneshot::Sender<NeolithResult<()>> },
+    Read { path: PathBuf, reply: oneshot::Sender<NeolithResult<Vec<u8>>> },
+    Delete { path: PathBuf, reply: oneshot::Sender<NeolithResult<()>> },
+    // ... exists, size, atomic write, shutdown
 }
 ```
 
-The `oneshot::Sender` allows the async caller to `await` the result without blocking the tokio runtime.
+The `oneshot::Sender` allows the async caller to `await` the result without blocking the tokio runtime. Operations are path-based: each write opens the file, writes, and closes it as one unit. Handle-based operations (offset appends to an already-open segment file) are part of the roadmap below.
 
 ## Feature Gate and Auto-Detection
 
@@ -208,23 +197,45 @@ Both engines use pre-allocated buffer pools to reduce allocation pressure on the
 
 Buffer pools are implemented as a simple `Vec<Vec<u8>>` behind a `Mutex`, with fallback to fresh allocation if the pool is empty. Returned buffers are `clear()`ed and pushed back to the pool.
 
-## Performance Characteristics
+## Status and Modernization Roadmap
 
-| Operation | StandardEngine | IoUringEngine | Improvement |
-|-----------|---------------|---------------|-------------|
-| 4KB random read | ~8 us | ~4 us | ~2x |
-| 64KB sequential read | ~12 us | ~6 us | ~2x |
-| 1MB sequential read | ~80 us | ~45 us | ~1.8x |
-| 4KB random write | ~15 us | ~8 us | ~1.9x |
-| Concurrent 64KB reads (32) | ~250 us p99 | ~120 us p99 | ~2x |
+### Current status
 
-The io_uring advantage comes from:
+The shipped io_uring engine is a deliberately conservative first implementation:
 
-1. **Fewer syscalls**: io_uring batches submissions and completions, reducing syscall overhead
-2. **No context switches**: The dedicated thread submits and reaps without switching to kernel mode for each operation
-3. **Pre-registered buffers**: Fixed buffers avoid kernel-side copy overhead
+- Operations are processed one at a time: each submission waits for its completion before the next begins, so the effective queue depth is 1 regardless of ring size.
+- Operations are path-based (open, transfer, close per call); there is no handle reuse and no fsync operation in the engine itself.
+- Registered (fixed) buffers and files are not yet used.
+- The durability-critical write paths do not route through it yet (see above).
 
-On macOS, the StandardEngine with `F_NOCACHE` provides competitive performance for sequential workloads. io_uring's advantage is most pronounced for random I/O patterns (small objects, concurrent reads from many drives).
+This makes the engine correct and easy to reason about, but it does not yet express the parallelism of modern NVMe devices. Treat io_uring in the current release as an opt-in preview, not a performance feature.
+
+### Planned: completion reactor
+
+The next iteration of the engine (in design, gated on NVMe validation hardware) turns the dedicated thread into a true completion reactor:
+
+- **Real queue depth**: many operations in flight per ring, submissions batched, completions reaped as they arrive.
+- **Linked operations**: an acknowledged durable write becomes a single kernel-enforced chain (write then fdatasync), halving round trips on the fsync path.
+- **Registered files and buffers**: pre-registered 1 MB chunk buffers matching the streaming erasure-coding pipeline, removing per-operation setup costs.
+- **Handle-based segment I/O**: offset appends and datasync against already-open journal segment files, which is what the group-commit write path actually needs.
+- **Hot-path wiring**: journal shard flush and group commit route through the engine behind an `[io]` config knob, defaulting to the standard path until benchmarks validate the switch.
+
+### Kernel feature roadmap
+
+The reactor detects kernel capabilities at startup and enables features in tiers. Later tiers are where recent kernels pay off:
+
+| Capability | Kernel | What it gives Neolith |
+|-----------|--------|------------------------|
+| Batched submission, linked write+fsync | 5.6+ | Queue depth and fewer syscalls on the durable-write path |
+| Registered files and buffers | 6.1+ | Zero per-op registration cost for chunked shard I/O |
+| Untorn writes (`RWF_ATOMIC`, XFS) | 6.13+ | Torn-write-immune journal records without double-writing |
+| Polled and hybrid-polled I/O | 6.13+ | Lower small-operation latency on NVMe polling queues |
+| Zero-copy network receive | 6.15+ | Future: cut a copy from the PUT/batch-GET network path |
+| NVMe passthrough + Flexible Data Placement | spike | Future: separate journal, stripe, and tombstone write streams to reduce SSD write amplification |
+
+### Deployment recommendation
+
+For NVMe deployments, run a kernel of 6.17 or newer with XFS so all current-tier features are available; the engine degrades gracefully on older kernels (the floor remains 5.6, below which it falls back to the standard engine). On macOS, the StandardEngine with `F_NOCACHE` provides competitive performance for sequential workloads.
 
 ## Dependencies
 
