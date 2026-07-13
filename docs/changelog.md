@@ -17,6 +17,7 @@ All notable changes to Neolith are documented here. Each release includes highli
 - **Release binaries**: tagged releases now attach `neolith-linux-x86_64` and `neolith-linux-aarch64` assets (used by the neolith-k8s Ansible bare-metal deploy).
 - **`NEOLITH_ADVERTISE`**: per-node override for `cluster.advertise`, for deployments where all nodes share one config file (Kubernetes ConfigMaps, baked images). See [Configuration](/docs/operations/configuration).
 - **Kubernetes deployment tooling**: the new [neolith-k8s](https://github.com/muratkars/neolith-k8s) repo ships the operator, Helm charts, Ansible playbooks, and Terraform modules (Apache 2.0).
+- **I/O engine status and roadmap**: the [I/O Engine](./architecture/io-engine.md) page now documents the io_uring engine's actual current state (a conservative, opt-in preview: one operation in flight at a time, not yet on the durable write path) and the planned completion-reactor modernization: real queue depth, kernel-linked write+fsync chains, registered buffers, and a kernel capability tier table (untorn `RWF_ATOMIC` journal writes on 6.13+, polled I/O, zero-copy receive, NVMe Flexible Data Placement). New deployment guidance: kernel 6.17+ with XFS recommended for NVMe nodes; the 5.6 floor and automatic fallback are unchanged.
 
 ---
 
