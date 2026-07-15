@@ -200,6 +200,19 @@ Inter-node communication uses HTTP/2 over the same port (9000) as client traffic
 | `/_neolith/v1/replicate/{bucket}/{key}` | PUT | Write replication |
 | `/_neolith/v1/replicate/{bucket}/{key}` | DELETE | Delete replication |
 | `/_neolith/v1/shard/{bucket}/{key}/{shard}` | GET | Shard read (for repair) |
+| `/_neolith/v1/list/{bucket}` | GET | Node-local listing page for distributed LIST fan-out |
+
+### Distributed LIST
+
+In cluster mode, `ListObjects`/`ListObjectsV2` fan out to every online node
+and merge the answers: the serving node snapshots the online node set for the
+page, queries each peer's node-local listing (plus its own), k-way merges the
+sorted results, and deduplicates replicas by newest modification time (a
+delete supersedes a stale live copy of the same key, so deleted objects never
+"resurrect" from a lagging replica). Listing consistency is strict by design:
+if any online peer fails to answer after a retry, the LIST returns 503
+(`SlowDown`) rather than a silently incomplete result. Objects on a node that
+is marked offline remain visible through their surviving replicas.
 
 ### Replication Protocol
 
