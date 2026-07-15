@@ -200,6 +200,7 @@ Inter-node communication uses HTTP/2 over the same port (9000) as client traffic
 | `/_neolith/v1/replicate/{bucket}/{key}` | PUT | Write replication |
 | `/_neolith/v1/replicate/{bucket}/{key}` | DELETE | Delete replication |
 | `/_neolith/v1/shard/{bucket}/{key}/{shard}` | GET | Shard read (for repair) |
+| `/_neolith/v1/list/{bucket}` | GET | Node-local listing page for distributed LIST fan-out |
 
 ### Replication Protocol
 
