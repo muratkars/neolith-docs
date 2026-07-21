@@ -56,6 +56,24 @@ drives = ["/mnt/disk1", "/mnt/disk2", "/mnt/disk3", "/mnt/disk4"]
 # data_dir = "/data/neolith"
 ```
 
+### Metadata / Listing Index
+
+```toml
+[meta]
+# Listing index backend: "memory" (default) or "disk" (experimental)
+index = "memory"
+# Disk backend only: entries buffered in RAM per index shard before the
+# buffer is sealed to disk (the 60s background tick seals smaller buffers)
+index_flush_threshold = 64000
+```
+
+The listing index answers `ListObjects`/`ListObjectsV2` and powers batch GET key selection. Two backends:
+
+- **`memory`** (default): every bucket's full key set lives in RAM, persisted as a whole-cache snapshot (`.neolith/listing-cache.bin`) every 60 seconds and on shutdown. Simple and fast, but resident memory grows with total key count and a stale snapshot means a full rescan at startup.
+- **`disk`** (experimental): the index lives on disk as partition-sharded sorted runs (`.neolith/index/<bucket>/shard-XX/`), aligned with the cluster's placement partitions so a rebalance move touches one shard per bucket. Resident memory drops to fence pointers, bloom filters, and small per-shard write buffers; recovery is per-shard and incremental (only shards with unflushed writes at crash time are re-derived from object metadata). Listings are served from the stored index rows without per-key metadata reads.
+
+The first start with `index = "disk"` derives each bucket's index from object metadata (existing buckets are pre-warmed in the background at startup; new buckets derive on first access); any leftover memory-backend snapshot is deleted. Switching backends is safe in both directions: each backend invalidates the other's persisted state at startup, at the cost of one full listing rebuild on the next switch back. The disk index also pins the cluster partition count it was built with and refuses to start over a mismatched tree (delete `.neolith/index/` to force a re-derive). The backend cannot be hot-reloaded.
+
 ### Erasure Coding
 
 ```toml
@@ -286,6 +304,7 @@ These settings require a full server restart to take effect:
 | `[erasure]` codec/shards | Changing EC params mid-flight would corrupt data |
 | `[cluster]` topology | Peer connections are established at startup |
 | `[server]` region | SigV4 scope is set at startup |
+| `[meta]` index | Listing backend is chosen at startup |
 
 ## Environment Variables
 
