@@ -11,17 +11,19 @@ Neolith is distributed as a single static binary. You can build from source or r
 
 | Requirement | Minimum | Recommended |
 |-------------|---------|-------------|
-| CPU | SIMD-capable (AVX2/NEON/SSSE3) | AVX-512 for maximum EC throughput |
+| CPU | any (scalar fallback works) | AVX2/NEON for erasure coding, AVX-512 for checksumming |
 | RAM | 512 MB | 4 GB+ (depends on dataset size) |
 | Disk | Any filesystem (ext4, XFS, ZFS) | XFS on NVMe for best performance |
 | OS | Linux (x86_64, aarch64), macOS | Linux for io_uring support |
 | Linux kernel | 3.2+ (standard I/O engine; Rust tier-1 baseline) | 5.6+ (enables the io_uring engine) |
 | Rust | 1.85+ (Edition 2024) | Latest stable |
 
-Neolith requires a SIMD-capable CPU and will refuse to start without one. This is a deliberate design choice: scalar erasure coding is too slow for production use.
+Neolith's erasure coding uses vector CPU instructions when available, with runtime detection and a portable scalar fallback if none of the below are present:
 
-- **x86_64**: AVX2 (Haswell+, 2013), SSSE3 (Core 2+, 2006), or AVX-512
+- **x86_64**: AVX2 (Haswell+, 2013), SSSE3 (Core 2+, 2006)
 - **aarch64**: NEON (all ARMv8 processors)
+
+Shard/object checksums (BLAKE3) additionally use AVX-512 where available. For production erasure-coding throughput, an AVX2-or-better x86_64 CPU or any aarch64/NEON CPU is recommended; a CPU without any of these still works, just slower.
 
 ## Building from Source
 
@@ -57,7 +59,7 @@ sudo cp target/release/neolith /usr/local/bin/
 
 ### Build with io_uring (Linux Only)
 
-For Linux systems with kernel 5.6+, enable the io_uring I/O engine for lower latency and higher throughput:
+For Linux systems with kernel 5.6+, the `iouring` feature compiles in an `io_uring`-based I/O engine as a runtime-selectable alternative to the standard engine:
 
 ```bash
 cargo build --release --features iouring
@@ -75,7 +77,7 @@ On Fedora/RHEL:
 sudo dnf install liburing-devel
 ```
 
-The io_uring engine is automatically detected at runtime. If the kernel does not support it, Neolith falls back to the standard I/O engine.
+Building with `--features iouring` only makes the engine available - it does not enable it. Select it at runtime via `[io] engine` in the config file (`"auto"`, `"standard"`, or `"uring"`; see [I/O Engine configuration](./operations/configuration.md#io-engine)). `"auto"` currently resolves to `"standard"` in practice: the `io_uring` engine is fully implemented and tested, but hasn't yet shown a measured throughput win over the standard engine for the callers wired so far - see the [I/O Engine architecture page](./architecture/io-engine.md#benchmark-status) for current status before opting in explicitly with `engine = "uring"`.
 
 ## Docker
 

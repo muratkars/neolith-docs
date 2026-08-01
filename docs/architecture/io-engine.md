@@ -5,243 +5,103 @@ title: I/O Engine
 
 # I/O Engine
 
-Neolith abstracts disk I/O behind an `IoEngine` interface with two implementations: a portable `StandardEngine` and a Linux-specific `IoUringEngine`. The engine is selected automatically at startup based on platform and kernel capabilities.
+Neolith abstracts disk I/O for the journal storage scheme behind a pluggable engine choice: a portable standard engine (`tokio::fs`) and, on Linux, an `io_uring`-based reactor. The engine is a runtime config choice (`[io].engine`), not a compile-time-only decision - only the availability of the `io_uring` code path is compile-time-gated (the `iouring` Cargo feature, Linux-only).
 
-## IoEngineKind
+This page describes the reactor as it exists today, after a full rewrite (feature #218) from an earlier, unwired prototype. If you read an older version of this page or of third-party notes about Neolith's `io_uring` support, treat the architecture and performance claims below as authoritative going forward.
 
-The engine dispatch uses an enum rather than a trait object. This avoids dynamic dispatch overhead on the hot path:
+## Where this applies
 
-```rust
-pub enum IoEngineKind {
-    Standard(StandardEngine),
-    IoUring(IoUringEngine),
-}
-```
+The engine choice is consulted only where a caller has actually been wired to route through it:
 
-The engine is selected once at startup by `create_engine()`. In the current release the durability-critical write paths (journal segment appends, erasure-coded shard flush, metadata store) intentionally use direct synchronous I/O with explicit fsync rather than routing through the engine: correctness first, on any platform. Routing those hot paths through the io_uring engine is the subject of the modernization roadmap below.
+- **EC shard flush** (`UringShardWriter`/`UringShardReader`) - writing a stripe's shards during flush, and the narrow-path GET read that serves a small object directly from its covering shard(s) without a full stripe decode.
+- **Journal group-commit segment writes** (`WriteBackend::Uring`) - the append + `fdatasync` path for the active WAL segment, for both the local writer and (in a cluster) the replica mirror.
 
-Note: The `IoEngine` trait uses Return Position Impl Trait in Traits (RPITIT) rather than `async_trait` or `dyn` dispatch. This means the trait is not object-safe, which is why `IoEngineKind` is an enum.
+Everything else - the replicated storage scheme, metadata I/O, listing, and any read path not listed above (full degraded stripe decode, compaction, scrub) - always uses the standard engine regardless of `[io].engine`. This is a deliberate, incremental rollout: each caller is wired and benchmarked on its own before the next one is considered.
 
-## StandardEngine
-
-The `StandardEngine` uses standard `tokio::fs` operations for all I/O. It works on all platforms (Linux, macOS, Windows).
-
-### macOS Optimizations
-
-On macOS, the standard engine uses `F_NOCACHE` file control hints to bypass the OS page cache for large sequential reads and writes. This prevents large object I/O from evicting useful cached data:
-
-```rust
-#[cfg(target_os = "macos")]
-fn set_nocache(file: &std::fs::File) {
-    use std::os::unix::io::AsRawFd;
-    unsafe { libc::fcntl(file.as_raw_fd(), libc::F_NOCACHE, 1) };
-}
-```
-
-### Write Path
-
-```
-1. Create temp file (.tmp suffix)
-2. Write data to temp file
-3. fsync the file
-4. Rename temp file to final path (atomic)
-```
-
-The atomic rename ensures crash consistency: a power failure at any point leaves either the old file or the new file, never a partial write.
-
-### Read Path
-
-```
-1. Open file
-2. Read into pre-allocated buffer
-3. Return buffer
-```
-
-For multi-shard reads, the engine issues parallel `tokio::fs::read` calls using `JoinSet`, allowing the tokio runtime to schedule I/O across threads.
-
-## IoUringEngine
-
-The `IoUringEngine` uses Linux's `io_uring` interface for asynchronous I/O. It is feature-gated behind the `iouring` Cargo feature and only compiles on Linux.
-
-### Architecture
-
-The io_uring engine uses a dedicated OS thread with an mpsc channel for communication:
-
-```
-Tokio async task                    Dedicated OS thread
-      |                                    |
-  [submit IoRequest]  --mpsc-->   [receive IoRequest]
-      |                                    |
-  [await oneshot]                 [submit SQE to io_uring ring]
-      |                                    |
-      |                           [wait for CQE completion]
-      |                                    |
-  [receive result]   <--oneshot-- [send result back]
-```
-
-This design keeps io_uring operations on a single dedicated thread, which avoids the complexity of sharing an io_uring ring across multiple threads. The mpsc channel is the only synchronization point.
-
-### Why a Dedicated Thread?
-
-io_uring rings are not thread-safe by default. While it is possible to use `IORING_SETUP_SQPOLL` for kernel-side polling or share rings with `IORING_SETUP_ATTACH_WQ`, the dedicated thread approach is simpler and provides predictable performance:
-
-- No contention on the submission queue
-- No need for `io_uring_register` to share rings
-- Clean shutdown via channel close
-- Easy to profile and debug (single thread for all I/O)
-
-### SQE/CQE Operations
-
-The engine uses `io_uring::opcode::Read` and `io_uring::opcode::Write` for data I/O:
-
-```rust
-// Submit a read operation
-let sqe = opcode::Read::new(
-    types::Fd(fd),
-    buf.as_mut_ptr(),
-    buf.len() as u32,
-)
-.offset(offset)
-.build()
-.user_data(request_id);
-
-// Submit to the ring
-unsafe { ring.submission().push(&sqe) }?;
-ring.submit()?;
-
-// Wait for completion
-let cqe = ring.completion().next().unwrap();
-let bytes_read = cqe.result();
-```
-
-### Communication Protocol
-
-Each I/O request is a `UringOp` variant carrying the target path, any data, and a reply channel:
-
-```rust
-enum UringOp {
-    Write { path: PathBuf, data: Vec<u8>, reply: oneshot::Sender<NeolithResult<()>> },
-    Read { path: PathBuf, reply: oneshot::Sender<NeolithResult<Vec<u8>>> },
-    Delete { path: PathBuf, reply: oneshot::Sender<NeolithResult<()>> },
-    // ... exists, size, atomic write, shutdown
-}
-```
-
-The `oneshot::Sender` allows the async caller to `await` the result without blocking the tokio runtime. Operations are path-based: each write opens the file, writes, and closes it as one unit. Handle-based operations (offset appends to an already-open segment file) are part of the roadmap below.
-
-## Feature Gate and Auto-Detection
-
-### Cargo Feature
-
-The io_uring engine is behind a feature gate:
+## Configuration
 
 ```toml
-[features]
-iouring = ["io-uring"]
+[io]
+engine = "auto"      # "auto" | "standard" | "uring"
+queue_depth = 128     # per-ring submission queue depth
+rings_per_drive = 2   # independent io_uring rings per drive
 ```
 
-Building without the feature excludes all io_uring code:
+- **`engine`** - `"standard"` always uses `tokio::fs`. `"uring"` requires `io_uring` to be available (Linux, kernel 5.6+, built with the `iouring` feature) and **fails to start** if it isn't - a misconfiguration is caught at startup, not silently downgraded. `"auto"` (the default) uses `io_uring` when available, falling back to standard with a logged reason otherwise.
+- **`queue_depth`** - submission queue depth per ring; only meaningful when the resolved engine is `io_uring`.
+- **`rings_per_drive`** - how many independent rings (each its own ring thread) serve each drive. See [Why multiple rings](#why-multiple-rings-ringpool) below for why this exists and how `2` was chosen.
 
-```bash
-# Standard build (no io_uring)
-cargo build --release
+**Current default behavior: `auto` resolves to `standard`.** This isn't a bug - see [Benchmark status](#benchmark-status) below. The `io_uring` path is fully implemented and tested, but hasn't yet demonstrated a throughput win over the standard engine for the write-path callers wired so far, on the hardware tested. Set `engine = "uring"` explicitly to opt in ahead of a default flip.
 
-# Build with io_uring support
-cargo build --release --features iouring
+## Reactor architecture
+
+Each `io_uring` ring runs on a dedicated OS thread, reachable from async callers via an mpsc channel:
+
+```
+Tokio async task                    Ring thread
+      |                                    |
+  [submit op]        --mpsc-->    [drain channel]
+      |                                    |
+  [await oneshot]                 [build SQEs into an in-flight table]
+      |                                    |
+      |                           [submit_and_wait(1)]
+      |                                    |
+      |                           [reap every ready CQE]
+      |                                    |
+  [receive result]   <--oneshot-- [reply to each completed op]
 ```
 
-### Platform Guard
+This is a real batched-submit/reap pipeline, not a one-op-at-a-time relay: multiple in-flight operations get submitted together and their completions reaped together, so the ring genuinely benefits from queue depth greater than 1. Blocking filesystem work that has no `io_uring` opcode (open, mkdir, stat, rename) runs on Tokio's ordinary blocking-thread pool via `spawn_blocking`, resolved before an op ever reaches the ring thread - the ring thread itself never blocks on VFS work.
 
-The io_uring code is wrapped in `cfg` attributes:
+A ring is not thread-safe to share directly, so each one still gets its own dedicated OS thread and its own mpsc channel as the single synchronization point - the same reasoning as earlier designs. What changed is that a *pool* of rings (see below) now exists instead of exactly one ring for the whole process, and each ring in the pool does real batched submission instead of a single-op relay.
 
-```rust
-#[cfg(all(target_os = "linux", feature = "iouring"))]
-mod uring;
-```
+### Handle-based file seam
 
-This prevents compilation errors on macOS and Windows, even if the feature is accidentally enabled.
+I/O against an already-open file goes through a handle type (`UringFile`) with offset-based operations - `write_at`, `write_at_sync` (a linked write→`fdatasync` chain, one round trip through the ring for both), `read_at`, `datasync` - rather than a path-per-operation API. This matters for the journal: a segment file, or a shard file mid-flush, stays open across multiple operations, and a handle-based API lets those operations share one open file instead of reopening it each time.
 
-### Auto-Detection
+### Registered files
 
-At startup, `create_engine()` selects the best available engine:
+Long-lived file handles (the journal's active segment, reopened across many group-commit batches) register into the ring's fixed-file table (`IORING_REGISTER_FILES`/`_UPDATE`) on open. This removes a `dup(2)` and the kernel's per-op `fdget`/`fdput` for every subsequent operation against that handle - a real per-op cost saving, but only for callers that issue many operations against the same open file. Short-lived, one-shot handles (the EC shard-flush write path, and the GET narrow-path read - each opens a file for exactly one operation before dropping it) deliberately do **not** register: the register/unregister round trip would cost more than the syscalls it saves for a handle with nothing to amortize it against.
 
-```rust
-pub fn create_engine() -> IoEngineKind {
-    #[cfg(all(target_os = "linux", feature = "iouring"))]
-    {
-        match IoUringEngine::new() {
-            Ok(engine) => {
-                tracing::info!("I/O engine: io_uring");
-                return IoEngineKind::IoUring(engine);
-            }
-            Err(e) => {
-                tracing::warn!("io_uring unavailable: {e}, falling back to standard I/O");
-            }
-        }
-    }
+Registered *buffers* (`IORING_REGISTER_BUFFERS`, writing directly into kernel-pinned memory to skip a copy) are not yet implemented. Every read today, `io_uring` or not, still allocates a fresh buffer per operation. This is a real, understood gap, deferred until there's a measured case that justifies the extra complexity (a fixed, address-stable buffer pool is a materially different data structure than the general-purpose reusable buffer pool this codebase has elsewhere).
 
-    tracing::info!("I/O engine: standard");
-    IoEngineKind::Standard(StandardEngine::new())
-}
-```
+## Why multiple rings (`RingPool`)
 
-If io_uring initialization fails (old kernel, missing capabilities, seccomp blocking), the engine falls back silently to standard I/O.
+A single ring, however well the batched-submit/reap loop is implemented, has a hard per-thread dispatch-loop throughput ceiling - one ring thread can only drive so many submit/reap cycles per second, independent of queue depth. On the hardware this was benchmarked on (2x NVMe drives), a single ring plateaued around 8-8.5k ops/s while the drives themselves could sustain roughly 19-23k ops/s - a ceiling well below physical capacity, confirmed by testing queue depths up to 2048 with no change (ruling out queue depth as the cause).
 
-## Buffer Pools
+Splitting load across multiple independent rings per drive removes this ceiling. `RingPool` is a drive-indexed pool of rings with round-robin selection within a drive: `rings_per_drive` rings are created per configured drive, and each write/read op resolves to one of that drive's rings by the same index the caller already uses for drive placement (so no extra lookup is needed). Measured on the same hardware: `rings_per_drive = 2` reached 95% of the standard engine's raw throughput (single ring reached only 70%), with `rings_per_drive = 4` only marginally better - which is why `2` is the default.
 
-Both engines use pre-allocated buffer pools to reduce allocation pressure on the hot path:
+The EC shard-flush writer and the GET narrow-path reader each hold their own `RingPool`; the journal's segment writer holds a separate, deliberately single-ring pool (its active segment is always exactly one file, so more rings there would just be idle threads, not usable concurrency). These pools are intentionally independent rather than shared, trading a small number of extra OS threads for simpler lifetime management between callers with different lifespans (per-flush vs. per-server-lifetime).
 
-- **Read buffers**: Pre-allocated to the expected shard size (object_size / K, rounded up)
-- **Write buffers**: Reused across sequential shard writes
-- **Pool sizing**: Configured based on the expected concurrency (default: 2x the number of drives)
+## Benchmark status
 
-Buffer pools are implemented as a simple `Vec<Vec<u8>>` behind a `Mutex`, with fallback to fresh allocation if the pool is empty. Returned buffers are `clear()`ed and pushed back to the pool.
+The reactor mechanism itself is proven: an isolated benchmark that talks directly to the reactor (no HTTP/S3/EC/journal layers in the way) shows `io_uring` beating the standard engine once enough operations are genuinely concurrent, and confirms `RingPool` removes the single-ring ceiling described above.
 
-## Status and Modernization Roadmap
+That win has **not yet shown up** for the real callers wired so far, end-to-end through the actual server:
 
-### Current status
+- **EC shard flush** (4 MiB objects, default 8+4 erasure scheme): no measurable difference from the standard engine (within ~0.3%, noise-level).
+- **Journal group-commit** (4 KiB objects): no measurable difference (also within ~0.3%).
 
-The shipped io_uring engine is a deliberately conservative first implementation:
+The reason is architectural, not a bug: the journal's group-commit path issues exactly one operation at a time from its single commit thread, so the reactor's batched-submission design is never actually exercised by that caller - there's nothing to batch. The EC shard-flush path's fan-out (writing a stripe's shards concurrently) does present genuine concurrency, but at the tested scheme's shard count and drive count, it falls short of the per-drive concurrency the isolated benchmark needed before a difference appeared.
 
-- Operations are processed one at a time: each submission waits for its completion before the next begins, so the effective queue depth is 1 regardless of ring size.
-- Operations are path-based (open, transfer, close per call); there is no handle reuse and no fsync operation in the engine itself.
-- Registered (fixed) buffers and files are not yet used.
-- The durability-critical write paths do not route through it yet (see above).
+**Practical implication:** `auto` stays defaulted to `standard` until a wired caller demonstrates a real win, not just a working mechanism. This is deliberate, re-confirmed discipline, not an oversight - the config surface and the reactor exist and are fully tested so that the moment a caller with the right concurrency shape gets wired (or hardware changes what "enough concurrency" means), the switch is a config change, not a rewrite.
 
-This makes the engine correct and easy to reason about, but it does not yet express the parallelism of modern NVMe devices. Treat io_uring in the current release as an opt-in preview, not a performance feature.
-
-### Planned: completion reactor
-
-The next iteration of the engine (in design, gated on NVMe validation hardware) turns the dedicated thread into a true completion reactor:
-
-- **Real queue depth**: many operations in flight per ring, submissions batched, completions reaped as they arrive.
-- **Linked operations**: an acknowledged durable write becomes a single kernel-enforced chain (write then fdatasync), halving round trips on the fsync path.
-- **Registered files and buffers**: pre-registered 1 MB chunk buffers matching the streaming erasure-coding pipeline, removing per-operation setup costs.
-- **Handle-based segment I/O**: offset appends and datasync against already-open journal segment files, which is what the group-commit write path actually needs.
-- **Hot-path wiring**: journal shard flush and group commit route through the engine behind an `[io]` config knob, defaulting to the standard path until benchmarks validate the switch.
-
-### Kernel feature roadmap
+## Kernel feature roadmap
 
 The reactor detects kernel capabilities at startup and enables features in tiers. Later tiers are where recent kernels pay off:
 
-| Capability | Kernel | What it gives Neolith |
-|-----------|--------|------------------------|
-| Batched submission, linked write+fsync | 5.6+ | Queue depth and fewer syscalls on the durable-write path |
-| Registered files and buffers | 6.1+ | Zero per-op registration cost for chunked shard I/O |
-| Untorn writes (`RWF_ATOMIC`, XFS) | 6.13+ | Torn-write-immune journal records without double-writing |
-| Polled and hybrid-polled I/O | 6.13+ | Lower small-operation latency on NVMe polling queues |
-| Zero-copy network receive | 6.15+ | Future: cut a copy from the PUT/batch-GET network path |
-| NVMe passthrough + Flexible Data Placement | spike | Future: separate journal, stripe, and tombstone write streams to reduce SSD write amplification |
+| Capability | Kernel | Status |
+|-----------|--------|--------|
+| Batched submission, linked write+fsync | 5.6+ | Shipped (the reactor rewrite this page describes) |
+| Registered files | 6.1+ | Shipped - long-lived handles (the journal segment writer) register on open, removing a `dup(2)` and per-op `fdget`/`fdput` |
+| Registered buffers | 6.1+ | Not yet implemented (see [Registered files](#registered-files) above) |
+| Untorn writes (`RWF_ATOMIC`, XFS) | 6.13+ | Roadmap - torn-write-immune journal records without double-writing |
+| Polled and hybrid-polled I/O | 6.13+ | Roadmap - lower small-operation latency on NVMe polling queues |
+| Zero-copy network receive | 6.15+ | Roadmap - cut a copy from the PUT/batch-GET network path |
+| NVMe passthrough + Flexible Data Placement | spike | Roadmap - separate journal, stripe, and tombstone write streams to reduce SSD write amplification |
 
-### Deployment recommendation
+## Kernel requirements
 
-For NVMe deployments, run a kernel of 6.17 or newer with XFS so all current-tier features are available; the engine degrades gracefully on older kernels (the floor remains 5.6, below which it falls back to the standard engine). On macOS, the StandardEngine with `F_NOCACHE` provides competitive performance for sequential workloads.
+`io_uring` itself needs Linux 5.6+ as an absolute floor; the registered-files mechanism above needs a somewhat newer kernel for reliable, non-degraded behavior. Neolith probes kernel capabilities at startup and exposes the detected tier via the server's info endpoint, so an operator can check what a given host actually supports before opting in. For NVMe-backed deployments, a 6.17+ kernel with XFS is the recommended baseline in product deployment guidance.
 
-## Dependencies
-
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| `io-uring` | 0.7 | Linux io_uring bindings |
-| `tokio` | 1.x | Async runtime, mpsc channels, oneshot |
-
-The `io-uring` crate is the only external dependency for the io_uring engine. It provides safe Rust bindings over the Linux io_uring syscalls.
+If `io_uring` initialization fails for any reason (old kernel, missing capability, seccomp policy blocking the required syscalls), `engine = "auto"` falls back to the standard engine and logs why; `engine = "uring"` fails startup instead, so an explicit request for `io_uring` that can't be honored is never silently downgraded.

@@ -119,6 +119,21 @@ fsync = false   # throughput over power-fail durability — regenerable data onl
 With `fsync = false`, an acknowledged write can be **lost on power loss or an OS crash**, which breaks the S3 contract that a successful `PUT` is durable. Never use it for primary, system-of-record data. It is safe only when the data can be regenerated. See [Deployment Topologies & Minimums](./deployment-topologies.md) for the single-node/local case.
 :::
 
+### I/O Engine
+
+```toml
+[io]
+engine = "auto"       # "auto" | "standard" | "uring"
+queue_depth = 128      # per-ring io_uring submission queue depth
+rings_per_drive = 2    # independent io_uring rings per drive
+```
+
+Mechanism, not policy — deliberately separate from `[durability]` above. Only consulted where a caller has actually been wired to route through it (currently: the journal's EC shard flush, its narrow-path GET read, and its group-commit segment writes; every other I/O path always uses the standard engine). Linux-only; `queue_depth`/`rings_per_drive` are meaningless when the resolved engine is `standard`.
+
+- `"standard"` — always `tokio::fs`, works everywhere.
+- `"uring"` — requires `io_uring` (Linux, kernel 5.6+, built with the `iouring` feature); fails to start if unavailable rather than silently downgrading.
+- `"auto"` (default) — uses `io_uring` when available, falls back to `standard` and logs why otherwise. **Currently resolves to `standard` in practice**: the config surface and reactor are fully implemented and tested, but haven't yet shown a measured throughput win over the standard engine for the callers wired so far. See [I/O Engine architecture](../architecture/io-engine.md#benchmark-status) for the current benchmark status before opting in with `engine = "uring"`.
+
 ### Compression
 
 ```toml
@@ -305,6 +320,7 @@ These settings require a full server restart to take effect:
 | `[cluster]` topology | Peer connections are established at startup |
 | `[server]` region | SigV4 scope is set at startup |
 | `[meta]` index | Listing backend is chosen at startup |
+| `[io]` engine/queue_depth/rings_per_drive | Ring pools are constructed once at startup |
 
 ## Environment Variables
 
