@@ -64,27 +64,35 @@ This distributes shards evenly across drives within a node and ensures determini
 
 ## Peer Discovery
 
-Neolith uses static TOML configuration for peer discovery:
+Neolith uses static TOML configuration for peer discovery - a node's own identity is its `advertise` URL, and it's given the list of every other node's URL directly:
 
 ```toml
 [cluster]
-node_id = "node-01"
-listen = "0.0.0.0:9000"
+advertise = "http://10.0.1.1:9000"
+peers = ["http://10.0.1.2:9000", "http://10.0.1.3:9000"]
+partitions = 16384
+replication_factor = 3
+heartbeat_interval_secs = 10
+placement_policy = "pack"
 
-[[cluster.peers]]
-node_id = "node-02"
-endpoint = "http://10.0.1.2:9000"
+# Optional: richer per-node failure-domain labels and drive lists. When
+# present, [[cluster.nodes]] supersedes `peers` - each entry declares its
+# own zone/rack/drives, and the local node is whichever entry's `advertise`
+# matches the one above.
+[[cluster.nodes]]
+advertise = "http://10.0.1.1:9000"
+zone = "us-east-1a"
+rack = "rack-01"
+drives = ["/mnt/disk1", "/mnt/disk2"]
+
+[[cluster.nodes]]
+advertise = "http://10.0.1.2:9000"
 zone = "us-east-1b"
 rack = "rack-02"
-
-[[cluster.peers]]
-node_id = "node-03"
-endpoint = "http://10.0.1.3:9000"
-zone = "us-east-1c"
-rack = "rack-03"
+drives = ["/mnt/disk1", "/mnt/disk2"]
 ```
 
-Each node's configuration lists all other nodes in the cluster. Nodes do not need to discover each other dynamically - the topology is defined at deployment time.
+Each node's configuration lists all other nodes in the cluster. Nodes do not need to discover each other dynamically - the topology is defined at deployment time. There is no separate `node_id` concept: a node's identity is always its `advertise` URL.
 
 ## Heartbeat and Health
 
@@ -92,32 +100,39 @@ Nodes monitor each other via periodic heartbeat polling:
 
 ### Topology Endpoint
 
-Each node exposes `/_neolith/v1/topology` which returns the node's view of the cluster:
+Each node exposes `/_neolith/v1/cluster/topology` which returns the node's view of the cluster:
 
 ```json
 {
   "version": 42,
-  "nodes": [
-    {
-      "node_id": "node-01",
+  "nodes": {
+    "http://10.0.1.1:9000": {
+      "id": "http://10.0.1.1:9000",
       "endpoint": "http://10.0.1.1:9000",
+      "domain": { "labels": [["zone", "us-east-1a"], ["rack", "rack-01"]] },
       "status": "online",
-      "zone": "us-east-1a",
-      "rack": "rack-01",
-      "drives": ["/mnt/disk1", "/mnt/disk2"]
+      "weight": 1.0,
+      "drives": ["/mnt/disk1", "/mnt/disk2"],
+      "last_heartbeat": "2026-08-02T12:00:00Z"
     }
-  ]
+  },
+  "spread_levels": ["rack", "zone"]
 }
 ```
 
+`nodes` is a map keyed by node id (always the peer's `advertise` URL, duplicated into both the map key and the `id`/`endpoint` fields - there's no independent identity scheme beyond the URL). Failure-domain labels (zone/rack/host) live under `domain.labels`, not as top-level fields.
+
 ### Health Polling
 
-Each node polls its peers at a configurable interval (default: 5 seconds):
+Each node polls its peers at `heartbeat_interval_secs` (default: 10 seconds):
 
-1. Send GET to `/_neolith/v1/topology` on each peer
-2. If the peer responds, mark it as `online`
-3. If the peer fails to respond after a timeout (default: 3 seconds), mark it as `suspect`
-4. After multiple consecutive failures (default: 3), mark it as `offline`
+1. Send GET to `/_neolith/v1/cluster/topology` on each peer, bounded by the generic RPC timeout (`rpc_timeout_secs`, default 30 seconds - there is no separate, shorter heartbeat-specific timeout)
+2. If the peer responds, mark it `online`
+3. If the request errors (including a timeout), mark it `offline` immediately - there is no intermediate `suspect` state and no consecutive-failure threshold; a single failed poll flips status right away
+
+### Node Status Values
+
+`NodeStatus` has three values: `online`, `draining` (administratively taken out of write rotation, e.g. during decommission), and `offline`. `suspect` is not a real status.
 
 ### Topology Version
 
@@ -125,7 +140,7 @@ The `ClusterTopology` maintains a monotonically increasing version number. The v
 
 - Node added to the cluster
 - Node removed from the cluster
-- Node status change (online/suspect/offline)
+- Node status change (online/draining/offline)
 
 Nodes compare topology versions during heartbeat to detect and reconcile divergent views.
 
