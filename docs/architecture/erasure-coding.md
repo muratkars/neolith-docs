@@ -31,8 +31,6 @@ For comparison, 3-way replication stores 3 full copies at 3x overhead (300% stor
 
 ### Configurable Ratios
 
-Erasure coding parameters can be configured per-bucket:
-
 | Scheme | Overhead | Tolerance | Use Case |
 |--------|----------|-----------|----------|
 | RS(4,2) | 1.5x | 2 shards | Small clusters (6 drives) |
@@ -40,6 +38,8 @@ Erasure coding parameters can be configured per-bucket:
 | RS(10,4) | 1.4x | 4 shards | Large clusters, balanced |
 | RS(14,4) | 1.29x | 4 shards | High capacity, space-optimized |
 | RS(16,4) | 1.25x | 4 shards | Maximum space efficiency |
+
+The scheme above is set cluster-wide via `[erasure]` in the config file. It can be overridden per storage pool, per bucket, or per storage class through the admin API - see [Erasure Scheme Overrides](../operations/configuration.md#erasure-scheme-overrides) for the endpoints, precedence order, and a caveat around LRC overrides.
 
 ### Encoding Process
 

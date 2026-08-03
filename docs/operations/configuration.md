@@ -87,6 +87,33 @@ Reed-Solomon is limited to 255 total shards (data + parity). For LRC, standard r
 
 **Scheme precedence.** The `[erasure]` block sets the cluster-wide default. The *effective* scheme for any given object is resolved with the precedence **storage-class > bucket > pool > global** and stamped on the object at write time, so a per-bucket or per-storage-class override always wins over the global default.
 
+### Erasure Scheme Overrides
+
+Storage-class and bucket-level overrides are managed at runtime through the admin API, not the TOML config file - they're operational, not deployment-time, settings. Each override independently sets an EC scheme (`ec`), a max EC stripe size (`max_stripe_bytes`), or both:
+
+```
+GET    /_neolith/admin/v1/ec-overrides                          # list every configured override
+GET    /_neolith/admin/v1/buckets/{bucket}/ec-override
+PUT    /_neolith/admin/v1/buckets/{bucket}/ec-override
+DELETE /_neolith/admin/v1/buckets/{bucket}/ec-override
+GET    /_neolith/admin/v1/storage-classes/{name}/ec-override
+PUT    /_neolith/admin/v1/storage-classes/{name}/ec-override
+DELETE /_neolith/admin/v1/storage-classes/{name}/ec-override
+```
+
+`PUT` body (both fields optional - set only the one you care about):
+
+```json
+{
+  "ec": { "codec": "reed-solomon", "data_shards": 10, "parity_shards": 4, "local_parity": 0 },
+  "max_stripe_bytes": 33554432
+}
+```
+
+`max_stripe_bytes` caps how large a single EC stripe is allowed to grow when the journal flushes a batch of writes for that bucket/storage-class - it does not resize `journal.segment_max_bytes` (the WAL segment-rolling threshold stays a single global setting), it only bounds the *EC stripe* an oversized flush batch gets split into. It must be at least 1 MiB; smaller values are rejected, since a target near or below typical object size defeats the point of stripe batching (one EC stripe, and its full parity-shard write + fsync overhead, per object).
+
+**LRC overrides are skipped, not applied.** The journal engine has no LRC support - if an `ec` override at any tier (pool, bucket, or storage-class) specifies `local_parity > 0`, that tier's EC scheme is skipped (not silently truncated to plain Reed-Solomon) and resolution falls through to the next tier in the precedence chain. A `max_stripe_bytes` value on the same override still applies even if its `ec` half was skipped.
+
 ### Durability
 
 ```toml

@@ -43,38 +43,36 @@ HLC timestamps are stored in `ObjectMeta.hlc_timestamp` and propagated via the `
 
 Replication uses the same HTTP/2 transport as all other Neolith communication (single port 9000):
 
-- **Endpoint**: `POST /_neolith/v1/replicate/{bucket}/{key}`
+- **Endpoint**: `PUT /_neolith/v1/replicate/{bucket}/{key}`
 - **Body**: `[meta_bytes | data_bytes]` concatenated
 - **Headers**:
   - `x-neolith-meta-size`: Byte length of the metadata prefix (demarcation between meta and data)
   - `x-neolith-hlc`: HLC timestamp of the write
 - **Delete replication**: `DELETE /_neolith/v1/replicate/{bucket}/{key}` with `x-neolith-hlc` header. The receiving node only deletes if the incoming HLC is greater than the stored HLC (LWW delete).
 
+This `/_neolith/v1/replicate/{bucket}/{key}` RPC is the same intra-cluster, node-to-node write-quorum replication mechanism used within any single Neolith cluster (OSS included) - it's how a write reaches every replica within one cluster's failure domain, not a separate cross-site protocol. Active-active *cross-site* replication (below) is a distinct, cell-to-cell mechanism layered on top.
+
 ### Configuration
 
-```toml
-[enterprise.replication]
-enabled = true
-mode = "active-active"  # or "active-passive"
+Cross-site replication is managed at runtime as a `ReplicationPolicy` per source/target cell pair, not through a static TOML site list - policies are added/removed/queried through the replication engine rather than declared once at deployment time, since sites and their relationships can change without a restart. Each policy has this shape:
 
-[[enterprise.replication.sites]]
-name = "us-east"
-endpoint = "https://neolith-us-east.example.com:9000"
-access_key = "REPL_ACCESS_KEY"
-secret_key = "REPL_SECRET_KEY"
-
-[[enterprise.replication.sites]]
-name = "eu-west"
-endpoint = "https://neolith-eu-west.example.com:9000"
-access_key = "REPL_ACCESS_KEY"
-secret_key = "REPL_SECRET_KEY"
-
-[enterprise.replication.policy]
-async_replication = true
-max_replication_lag_seconds = 60
-retry_interval_seconds = 5
-max_retries = 10
+```json
+{
+  "policy_id": "us-east-to-eu-west",
+  "source_cell": "us-east",
+  "target_cell": "eu-west",
+  "mode": "active-active",
+  "conflict_resolution": "last-writer-wins",
+  "prefix_filter": null,
+  "enabled": true
+}
 ```
+
+- `mode`: `"active-active"` or `"active-passive"`.
+- `conflict_resolution`: `"last-writer-wins"` (HLC-based, described above), `"source-wins"`, or `"target-wins"` - LWW is not the only option.
+- `prefix_filter`: optional key-prefix scope, so a policy can replicate only a subset of a bucket's keyspace instead of everything.
+
+> The stable operator-facing surface for creating/editing policies (an admin API endpoint, CLI command, or config-file bootstrap) isn't documented on this page yet - check the `neolith-enterprise` admin API reference for the current mechanism before relying on the JSON shape above as a literal request body.
 
 ## Data Tiering
 
