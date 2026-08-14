@@ -154,9 +154,12 @@ awscurl --service s3 --region us-east-1 \
   "total_batches": 782,
   "batch_size": 64,
   "seed": 42,
-  "format": "tar+lz4"
+  "format": "tar+lz4",
+  "skipped_keys": 0
 }
 ```
+
+`skipped_keys` reports keys excluded at registration time because their cluster-remote metadata could not be resolved (an unreachable peer during a `content_type`-filtered registration): the epoch is knowingly short by that many keys. Zero on single-node deployments and unfiltered registrations.
 
 ### Deterministic Shuffling
 
