@@ -16,7 +16,7 @@ Event notifications let you react to changes in your buckets in near-real-time. 
 - **Cache invalidation**: purge a CDN edge cache when objects change
 - **Data synchronization**: replicate changes to an external system
 
-Events are emitted inline during S3 operations (PUT, COPY, DELETE, CompleteMultipartUpload). Matching events are queued in-memory and delivered asynchronously by a background worker. Failed deliveries are retried with exponential backoff, and events that exhaust all retries are moved to a dead letter queue.
+Events are emitted inline during S3 operations (PUT, COPY, DELETE, CompleteMultipartUpload). Matching events are queued in-memory and delivered asynchronously by a background worker. Failed deliveries are retried with exponential backoff, and events that exhaust all retries are moved to a dead letter queue - as are events dropped at enqueue time when the in-memory queue is full (a failing destination slows the worker, which is exactly what fills the queue, so both loss modes land in the same DLQ).
 
 ## Event Types
 
