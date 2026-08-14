@@ -114,6 +114,29 @@ DELETE /_neolith/admin/v1/storage-classes/{name}/ec-override
 
 **LRC overrides are skipped, not applied.** The journal engine has no LRC support - if an `ec` override at any tier (pool, bucket, or storage-class) specifies `local_parity > 0`, that tier's EC scheme is skipped (not silently truncated to plain Reed-Solomon) and resolution falls through to the next tier in the precedence chain. A `max_stripe_bytes` value on the same override still applies even if its `ec` half was skipped.
 
+### Journal commit sharding
+
+```toml
+[journal]
+commit_shards = 2   # default: 2
+```
+
+Under `storage.scheme = "journal"`, every write routes to one of
+`commit_shards` independent commit threads (by bucket/key partition). This is
+a measured workload trade-off, not a free speedup: spreading the same client
+concurrency across more shards raises large-object PUT throughput but thins
+each group-commit batch, amortizing fsync worse for small objects. On the
+2x NVMe reference hardware (vs one shard): 2 shards were near-neutral on
+4 KiB durable PUTs (-0.9%) while gaining +25.7% at 64 KiB, +56.9% at 1 MiB,
+and +78.0% at 8 MiB - the default; 8 shards gained the most on large objects
+(about 3.2x) but cost 47.5% of 4 KiB durable-PUT throughput. Raise the value
+for large-object-heavy ingest pipelines; lower it to 1 only if small-object
+durable-PUT is your sole bottleneck. Local per-node setting with no
+cluster-wide meaning. Choose it per deployment BEFORE writing data: keys
+route to shards by hash, so the server refuses to start if the configured
+value differs from what an existing journal was written with (changing it
+requires an empty journal directory).
+
 ### Durability
 
 ```toml
