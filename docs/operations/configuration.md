@@ -137,6 +137,24 @@ route to shards by hash, so the server refuses to start if the configured
 value differs from what an existing journal was written with (changing it
 requires an empty journal directory).
 
+### Large-object write concurrency
+
+```toml
+[journal]
+large_put_concurrency = 0   # default: 0 (auto: CPU parallelism / 2)
+```
+
+Large objects (those above `journal.max_object_bytes`) are erasure-coded and
+written to disk on the requesting task, off the commit threads, so their
+throughput scales with client concurrency rather than with `commit_shards`.
+`large_put_concurrency` caps how many of these encode-and-write operations
+run at once across the whole server: it bounds the chunk-buffer memory and
+drive contention a burst of large PUTs can create; requests over the cap
+queue rather than pile on. `0` (the default) sizes the cap automatically to
+half the available CPU parallelism. Values up to 65536 are accepted; there
+is rarely a reason to raise the automatic value unless large-object ingest
+is your dominant workload and profiling shows idle drives.
+
 ### Durability
 
 ```toml
