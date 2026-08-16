@@ -119,7 +119,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Migration Guides',
       items: [
-        'guides/migration-from-minio',
+        'guides/migration-from-object-stores',
         'guides/migration-from-s3',
       ],
     },
@@ -143,8 +143,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Comparisons',
       items: [
-        'comparison/vs-minio',
-        'comparison/vs-ceph',
+        'comparison/vs-open-source',
         'comparison/vs-cloud',
       ],
     },

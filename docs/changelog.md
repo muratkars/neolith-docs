@@ -101,7 +101,7 @@ RDMA-1 through RDMA-3 shipped with the initial v0.6.0 release (2026-04-25). RDMA
 
 ### Docs
 
-- All user-facing CLI examples migrated from aws-cli to mc (MinIO Client). Use `mc alias set myn http://localhost:9000 KEY SECRET` to configure the `myn` alias; every `aws --endpoint-url` command in the quickstart, S3 API reference, and use-case guides has a direct mc equivalent. SSE-C, CORS, S3 Select, multipart low-level, and object-lock examples retain aws s3api (no mc equivalent for those operations).
+- All user-facing CLI examples migrated from aws-cli to mc (S3-compatible CLI). Use `mc alias set myn http://localhost:9000 KEY SECRET` to configure the `myn` alias; every `aws --endpoint-url` command in the quickstart, S3 API reference, and use-case guides has a direct mc equivalent. SSE-C, CORS, S3 Select, multipart low-level, and object-lock examples retain aws s3api (no mc equivalent for those operations).
 
 ### Stats
 

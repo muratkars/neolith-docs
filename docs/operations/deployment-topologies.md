@@ -12,7 +12,7 @@ The short version: Neolith's two durability mechanisms have *different* minimums
 - **Replication** (the default cluster write path, `replication_factor` copies) needs **failure domains, not drives.** RF=3 wants 3 domains.
 - **Erasure coding** (`[erasure]`) needs **`data_shards + parity_shards` drives**, and the ratio must be sized so that losing one whole domain stays within the parity budget.
 
-If you come from MinIO, note the difference: there the **drive** is the failure domain, which is where the "minimum 4 drives" rule comes from. In a Neolith *multi-node* cluster the **node** (or rack/zone, if labeled) is the coarse failure domain, so the binding minimum is node count — not drive count.
+If you come from other open-source object stores, note the difference: there the **drive** is typically the failure domain, which is where the "minimum 4 drives" rule comes from. In a Neolith *multi-node* cluster the **node** (or rack/zone, if labeled) is the coarse failure domain, so the binding minimum is node count — not drive count.
 
 ## Failure domains
 
@@ -71,7 +71,7 @@ parity_shards = 2          # 2+2 = 4 shards across 4 drives → survive 1 drive 
 fsync = true
 ```
 
-Here the **drive is the failure domain** — the MinIO-equivalent topology. You need at least `data_shards + parity_shards` drives (4 for 2+2, 6 for 4+2, etc.). It survives drive failure but **not** loss or power-cut of the whole box, because every drive shares one power rail and one kernel. A single node is therefore never a highly-available deployment, regardless of drive count.
+Here the **drive is the failure domain** — the topology familiar from other open-source stores. You need at least `data_shards + parity_shards` drives (4 for 2+2, 6 for 4+2, etc.). It survives drive failure but **not** loss or power-cut of the whole box, because every drive shares one power rail and one kernel. A single node is therefore never a highly-available deployment, regardless of drive count.
 
 ## 3. Three-node cluster (minimum HA)
 
