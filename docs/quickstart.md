@@ -10,7 +10,7 @@ Get up and running with Neolith in 5 minutes. This guide covers single-node setu
 ## Prerequisites
 
 - Neolith binary installed (see [Installation](/docs/installation))
-- `mc` (MinIO Client) installed:
+- `mc` (S3-compatible CLI) installed:
   ```bash
   brew install minio/stable/mc   # macOS
   # wget https://dl.min.io/client/mc/release/linux-amd64/mc && chmod +x mc && sudo mv mc /usr/local/bin/   # Linux
@@ -39,7 +39,7 @@ Neolith is now running and accepting S3 requests on port 9000.
 
 ## Configure mc
 
-`mc` (MinIO Client) is a lightweight S3-compatible CLI. Configure an alias pointing at your Neolith instance - when running without authentication (development mode), any credentials will work:
+`mc` is a lightweight S3-compatible CLI. Configure an alias pointing at your Neolith instance - when running without authentication (development mode), any credentials will work:
 
 ```bash
 # Configure alias (replace URL, KEY, SECRET with your values)

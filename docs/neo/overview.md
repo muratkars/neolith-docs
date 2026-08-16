@@ -6,7 +6,7 @@ sidebar_label: "Overview"
 
 # neo: the native Neolith client
 
-[`neo`](https://github.com/muratkars/neo) is Neolith's first-class command-line client. It is a single static Rust binary that speaks SigV4 over the standard S3 API (so it works against any Neolith, MinIO, or AWS S3 endpoint) and adds first-class commands for Neolith's differentiated surface: batch GET, bucket forks, ETL transforms, and ML-aware dataset inspection.
+[`neo`](https://github.com/muratkars/neo) is Neolith's first-class command-line client. It is a single static Rust binary that speaks SigV4 over the standard S3 API (so it works against any S3-compatible endpoint) and adds first-class commands for Neolith's differentiated surface: batch GET, bucket forks, ETL transforms, and ML-aware dataset inspection.
 
 `neo` is distributed under Apache 2.0. There is no Python runtime and no per-cluster install: one binary runs anywhere.
 
@@ -15,7 +15,7 @@ sidebar_label: "Overview"
 Any S3 client will talk to Neolith, but the generic clients leave Neolith's value-add on the floor:
 
 - `aws s3` is the lowest common denominator: slow Python startup, awkward batch UX, and no awareness of anything beyond bare S3 verbs.
-- `mc` (the MinIO client) is excellent for bare S3, but it is built around MinIO's worldview and exposes none of Neolith's extensions.
+- `mc` is excellent for bare S3, but it is built around another vendor's worldview and exposes none of Neolith's extensions.
 
 `neo` answers the question "what should I install to actually use Neolith?" It stays backwards compatible with any S3 endpoint, while surfacing the Neolith-only features as top-level commands instead of hand-rolled `curl` invocations.
 
