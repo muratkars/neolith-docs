@@ -54,7 +54,37 @@ max_clock_skew_seconds = 900      # SigV4 timestamp tolerance (15 min)
 drives = ["/mnt/disk1", "/mnt/disk2", "/mnt/disk3", "/mnt/disk4"]
 # Single-directory mode (for development)
 # data_dir = "/data/neolith"
+# scheme = "journal"   # write-path scheme; see the default rules below
 ```
+
+**Write-path scheme default.** `storage.scheme` selects between the journal
+write path (`"journal"`: group-commit journal for small objects, direct
+erasure-coded stripes for large ones) and the historical whole-object
+replication path (`"replicated"`). When left unset, the default is resolved
+from the deployment:
+
+- **Single node, no server-side encryption**: `journal` (the default since
+  the durability and performance gate closed).
+- **Multi-node cluster** (any `[cluster]` peers or nodes declared):
+  `replicated`, until journal cluster mode's storage overhead is removed.
+  Journal remains an explicit opt-in for clusters.
+- **Server-side encryption enabled**: `replicated`, because the journal
+  scheme does not yet support multipart uploads with SSE and S3 SDKs switch
+  to multipart automatically for large uploads. Existing journal data keeps
+  the journal scheme; only the silent default is affected.
+
+**Downgrade guard.** Booting with `scheme = "replicated"` while journal data
+exists on disk is refused: journal-written objects are readable only while
+the journal is enabled, so the downgrade would serve them as missing. The
+same guard recognizes the growth case (a single node whose unset scheme
+defaulted to journal, later joined to a cluster) and names the options: set
+`scheme = "journal"` explicitly to keep the data while clustering, or remove
+the `[cluster]` section to stay single-node.
+
+A global `[erasure] codec = "lrc"` is rejected at startup under the journal
+scheme rather than silently degrading to plain Reed-Solomon (per-bucket LRC
+overrides are skipped with fallthrough, as described under Erasure Scheme
+Overrides).
 
 ### Metadata / Listing Index
 
@@ -136,6 +166,23 @@ cluster-wide meaning. Choose it per deployment BEFORE writing data: keys
 route to shards by hash, so the server refuses to start if the configured
 value differs from what an existing journal was written with (changing it
 requires an empty journal directory).
+
+### Journal WAL drive sharding
+
+```toml
+[journal]
+shard_drives = false   # default: false
+```
+
+With `shard_drives = true` and multiple `[storage]` drives, each commit
+shard's write-ahead log directory is placed on its own drive (round-robin),
+so group-commit fsyncs on different shards stop contending for one device.
+Like `commit_shards`, choose it before first write: the server persists the
+shard-to-drive layout in a manifest and refuses to boot on ANY layout change
+(drive list reorder, insertion, or removal) that would remap a shard away
+from its data, naming the affected shard and both locations. Deliberate
+hand-migrated re-layouts delete the manifest file to re-adopt the current
+configuration.
 
 ### Large-object write concurrency
 
@@ -236,10 +283,21 @@ heartbeat_interval_secs = 10
 rpc_timeout_secs = 30
 rpc_idle_timeout_secs = 90
 rpc_max_idle_per_host = 64
+# rpc_token = "shared-secret"     # authenticate the internal inter-node RPC surface
 replication_factor = 3            # copies per object (also the journal/replicated tier RF)
 placement_policy = "pack"         # "pack" (default) or "strict" — see below
 min_free_disk_bytes = 1073741824  # 1 GB
 ```
+
+**Internal RPC authentication.** `rpc_token` is a shared secret carried on
+every internal inter-node RPC (shard transfer, replication, journal mirror,
+topology) and required by every internal RPC endpoint when set. It must be
+identical on every node. When unset, the internal surface accepts
+unauthenticated requests and the server logs a startup warning: on any
+network that is not fully trusted, set `rpc_token` (and preferably TLS/mTLS
+under `[tls]`), since these endpoints share the public listen port and carry
+object shard data. The S3 API itself is always authenticated separately via
+SigV4.
 
 **Placement policy.** `placement_policy` controls how shards/replicas are spread across failure domains (zone/rack/host):
 
