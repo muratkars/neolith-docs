@@ -284,10 +284,20 @@ rpc_timeout_secs = 30
 rpc_idle_timeout_secs = 90
 rpc_max_idle_per_host = 64
 # rpc_token = "shared-secret"     # authenticate the internal inter-node RPC surface
+# shard_read_timeout_secs = 5     # per-shard READ bound; see below
 replication_factor = 3            # copies per object (also the journal/replicated tier RF)
 placement_policy = "pack"         # "pack" (default) or "strict" — see below
 min_free_disk_bytes = 1073741824  # 1 GB
 ```
+
+**Shard read timeout.** `shard_read_timeout_secs` (default 5) bounds a
+single shard fetch on the read path; on expiry the read degrades to
+erasure-code reconstruction, the same path a confirmed-missing shard takes.
+The client-wide `rpc_timeout_secs` stays sized for replication writes. Size
+it to the worst-case whole-shard transfer on your slowest inter-node link:
+too small makes healthy-but-slow peers look degraded (a peer is
+short-circuited by the circuit breaker only after two consecutive
+timeouts; connection failures short-circuit immediately).
 
 **Internal RPC authentication.** `rpc_token` is a shared secret carried on
 every internal inter-node RPC (shard transfer, replication, journal mirror,
