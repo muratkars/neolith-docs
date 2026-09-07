@@ -116,9 +116,9 @@ for epoch in range(100):
 | Deployment | Complex (kernel modules, clients) | Single binary, zero dependencies |
 | Cost | Expensive license + hardware | Apache 2.0, commodity hardware |
 
-### MinIO / Other S3-Compatible Stores
+### Other S3-Compatible Stores
 
-| | MinIO | Neolith |
+| | Typical S3-compatible store | Neolith |
 |---|---|---|
 | Batch API | No (one GET per object) | Yes (batch GET + epoch streaming) |
 | Server-side transforms | No | Yes (Native + WASM + Container) |

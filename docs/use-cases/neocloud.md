@@ -32,7 +32,7 @@ Mapping to Neolith's topology labels (`zone -> rack -> host -> drive`, see [Depl
 | NVMe drive | `drive` | Stores shards; sets capacity and rebuild parallelism |
 
 :::note The node is the failure domain
-Unlike MinIO, where the **drive** is the failure domain, Neolith spreads each object's shards across **distinct hosts** (and, when labeled, distinct racks/zones). Your 24 drives per server are about capacity and rebuild throughput, not stripe width. One host holds shards from many thousands of different stripes across its drives. See [Erasure Coding](../architecture/erasure-coding) and [Deployment Topologies](../operations/deployment-topologies).
+Unlike stores where the **drive** is the failure domain, Neolith spreads each object's shards across **distinct hosts** (and, when labeled, distinct racks/zones). Your 24 drives per server are about capacity and rebuild throughput, not stripe width. One host holds shards from many thousands of different stripes across its drives. See [Erasure Coding](../architecture/erasure-coding) and [Deployment Topologies](../operations/deployment-topologies).
 :::
 
 ## Recommended architecture

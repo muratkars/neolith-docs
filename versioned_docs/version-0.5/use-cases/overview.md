@@ -35,9 +35,9 @@ Protect critical data with erasure-coded storage, encryption at rest, and automa
 
 ## Migration Guides
 
-Already running MinIO or AWS S3? Neolith's S3 API compatibility makes migration straightforward.
+Already running another S3-compatible store? Neolith's S3 API compatibility makes migration straightforward.
 
-- [Migrate from MinIO](../guides/migration-from-minio) - Configuration mapping, data migration, and feature comparison
+- [Migrate from S3-compatible object stores](../guides/migration-from-minio) - Configuration mapping, data migration, and feature comparison
 - [Migrate from AWS S3](../guides/migration-from-s3) - Data transfer strategies, IAM mapping, and cost considerations
 
 ## Choosing the Right Pattern

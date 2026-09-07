@@ -66,10 +66,21 @@ awscurl --service s3 --region us-east-1 \
 HTTP/1.1 200 OK
 Content-Type: application/x-tar+lz4
 Content-Length: <size>
+x-neolith-batch-count: 4
+x-neolith-batch-skipped: 0
 x-amz-request-id: 550e8400-e29b-41d4-a716-446655440000
 
 <TAR+LZ4 binary data>
 ```
+
+Every batch response reports how many objects it actually contains and how many it could not serve:
+
+| Header | Description |
+|--------|-------------|
+| `x-neolith-batch-count` | Number of objects in the returned archive |
+| `x-neolith-batch-skipped` | Number of requested/listed objects the batch could not serve (fetch errors, SSE-C objects, cluster-remote objects whose data is not inline; see below) |
+
+A batch response is always `200 OK` even when some objects were skipped; clients that need exactness should check `x-neolith-batch-skipped` instead of trusting archive size. Details of each skip are in the server log.
 
 ### Supported Formats
 
@@ -143,9 +154,12 @@ awscurl --service s3 --region us-east-1 \
   "total_batches": 782,
   "batch_size": 64,
   "seed": 42,
-  "format": "tar+lz4"
+  "format": "tar+lz4",
+  "skipped_keys": 0
 }
 ```
+
+`skipped_keys` reports keys excluded at registration time because their cluster-remote metadata could not be resolved (an unreachable peer during a `content_type`-filtered registration): the epoch is knowingly short by that many keys. Zero on single-node deployments and unfiltered registrations.
 
 ### Deterministic Shuffling
 
@@ -207,6 +221,7 @@ x-amz-request-id: 660f9500-f39c-52e5-b827-557766551111
 |---|---|
 | `x-neolith-batch-index` | Zero-based index of the current batch |
 | `x-neolith-batch-total` | Total number of batches in the epoch |
+| `x-neolith-batch-skipped` | Objects in this batch that could not be served |
 | `x-neolith-epoch-id` | Echo of the epoch ID |
 
 ### End of Epoch
@@ -314,3 +329,11 @@ Batch operations behave the same under both storage schemes. Under `storage.sche
 - The `content_type` filter reads each candidate's metadata journal-first. A metadata read that fails (I/O error or corruption) fails the request rather than silently dropping the object from the filtered set.
 
 Limitation: objects encrypted with SSE-C (a per-request customer key) cannot be returned by batch GET, because the batch request carries no channel for the customer key. Such an object is reported as a fetch error and excluded from the archive; retrieve it with a normal GET that supplies the key.
+
+## Cluster mode
+
+In a clustered deployment, batch key enumeration is cluster-complete: listing and the `content_type` filter see every node's objects, not just the serving node's. The data fetch resolves each key against local sources first (journal, then meta store) and then, for keys whose data lives only on peer nodes, against the cluster:
+
+- A remote object whose data is inline (small objects, under the inline threshold) is fetched from a peer replica and served normally.
+- A remote object whose data is file- or EC-resident cannot be pulled across nodes yet; it is counted in `x-neolith-batch-skipped` with a precise error in the server log. Routing batch requests to any node works best when object data is replicated, or when batch traffic targets the nodes that hold the data.
+- A peer that is unreachable produces an error entry rather than being treated as "object does not exist", so network trouble degrades loudly instead of shrinking archives silently.

@@ -282,7 +282,7 @@ client.delete_object()
     .await?;
 ```
 
-## mc (MinIO Client)
+## mc (S3-compatible CLI)
 
 ### Configuration
 

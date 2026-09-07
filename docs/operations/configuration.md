@@ -54,12 +54,37 @@ max_clock_skew_seconds = 900      # SigV4 timestamp tolerance (15 min)
 drives = ["/mnt/disk1", "/mnt/disk2", "/mnt/disk3", "/mnt/disk4"]
 # Single-directory mode (for development)
 # data_dir = "/data/neolith"
-# Write-path scheme: "replicated" or "journal". Leave unset to get the
-# node-count-aware default described below.
-# scheme = "journal"
+# scheme = "journal"   # write-path scheme; see the default rules below
 ```
 
-**`scheme` default.** When `scheme` is left unset, a **single-node** deployment (no `[cluster]` block, or a `[cluster]` block with no `peers`) now defaults to `journal`: small objects commit through the group-commit journal and flush to erasure-coded stripes, instead of whole-object replication. A **multi-node cluster** (`[cluster] peers = [...]` non-empty) still defaults to `replicated` - journal cluster mode works when explicitly opted into (`scheme = "journal"` is always honored if set, on any cluster size), but until the owner-only-flush placement work lands it costs roughly 4.5x the storage of replication, so it stays an explicit choice rather than a silent default. `replicated` remains available (and is exactly what the pre-cutover default did) by setting `scheme = "replicated"` explicitly.
+**Write-path scheme default.** `storage.scheme` selects between the journal
+write path (`"journal"`: group-commit journal for small objects, direct
+erasure-coded stripes for large ones) and the historical whole-object
+replication path (`"replicated"`). When left unset, the default is resolved
+from the deployment:
+
+- **Single node, no server-side encryption**: `journal` (the default since
+  the durability and performance gate closed).
+- **Multi-node cluster** (any `[cluster]` peers or nodes declared):
+  `replicated`, until journal cluster mode's storage overhead is removed.
+  Journal remains an explicit opt-in for clusters.
+- **Server-side encryption enabled**: `replicated`, because the journal
+  scheme does not yet support multipart uploads with SSE and S3 SDKs switch
+  to multipart automatically for large uploads. Existing journal data keeps
+  the journal scheme; only the silent default is affected.
+
+**Downgrade guard.** Booting with `scheme = "replicated"` while journal data
+exists on disk is refused: journal-written objects are readable only while
+the journal is enabled, so the downgrade would serve them as missing. The
+same guard recognizes the growth case (a single node whose unset scheme
+defaulted to journal, later joined to a cluster) and names the options: set
+`scheme = "journal"` explicitly to keep the data while clustering, or remove
+the `[cluster]` section to stay single-node.
+
+A global `[erasure] codec = "lrc"` is rejected at startup under the journal
+scheme rather than silently degrading to plain Reed-Solomon (per-bucket LRC
+overrides are skipped with fallthrough, as described under Erasure Scheme
+Overrides).
 
 ### Metadata / Listing Index
 
@@ -113,6 +138,64 @@ DELETE /_neolith/admin/v1/storage-classes/{name}/ec-override
 `max_stripe_bytes` caps how large a single EC stripe is allowed to grow when the journal flushes a batch of writes for that bucket/storage-class - it does not resize `journal.segment_max_bytes` (the WAL segment-rolling threshold stays a single global setting), it only bounds the *EC stripe* an oversized flush batch gets split into. It must be at least 1 MiB; smaller values are rejected, since a target near or below typical object size defeats the point of stripe batching (one EC stripe, and its full parity-shard write + fsync overhead, per object).
 
 **LRC overrides are skipped, not applied.** The journal engine has no LRC support - if an `ec` override at any tier (pool, bucket, or storage-class) specifies `local_parity > 0`, that tier's EC scheme is skipped (not silently truncated to plain Reed-Solomon) and resolution falls through to the next tier in the precedence chain. A `max_stripe_bytes` value on the same override still applies even if its `ec` half was skipped.
+
+### Journal commit sharding
+
+```toml
+[journal]
+commit_shards = 2   # default: 2
+```
+
+Under `storage.scheme = "journal"`, every write routes to one of
+`commit_shards` independent commit threads (by bucket/key partition). This is
+a measured workload trade-off, not a free speedup: spreading the same client
+concurrency across more shards raises large-object PUT throughput but thins
+each group-commit batch, amortizing fsync worse for small objects. On the
+2x NVMe reference hardware (vs one shard): 2 shards were near-neutral on
+4 KiB durable PUTs (-0.9%) while gaining +25.7% at 64 KiB, +56.9% at 1 MiB,
+and +78.0% at 8 MiB - the default; 8 shards gained the most on large objects
+(about 3.2x) but cost 47.5% of 4 KiB durable-PUT throughput. Raise the value
+for large-object-heavy ingest pipelines; lower it to 1 only if small-object
+durable-PUT is your sole bottleneck. Local per-node setting with no
+cluster-wide meaning. Choose it per deployment BEFORE writing data: keys
+route to shards by hash, so the server refuses to start if the configured
+value differs from what an existing journal was written with (changing it
+requires an empty journal directory).
+
+### Journal WAL drive sharding
+
+```toml
+[journal]
+shard_drives = false   # default: false
+```
+
+With `shard_drives = true` and multiple `[storage]` drives, each commit
+shard's write-ahead log directory is placed on its own drive (round-robin),
+so group-commit fsyncs on different shards stop contending for one device.
+Like `commit_shards`, choose it before first write: the server persists the
+shard-to-drive layout in a manifest and refuses to boot on ANY layout change
+(drive list reorder, insertion, or removal) that would remap a shard away
+from its data, naming the affected shard and both locations. Deliberate
+hand-migrated re-layouts delete the manifest file to re-adopt the current
+configuration.
+
+### Large-object write concurrency
+
+```toml
+[journal]
+large_put_concurrency = 0   # default: 0 (auto: CPU parallelism / 2)
+```
+
+Large objects (those above `journal.max_object_bytes`) are erasure-coded and
+written to disk on the requesting task, off the commit threads, so their
+throughput scales with client concurrency rather than with `commit_shards`.
+`large_put_concurrency` caps how many of these encode-and-write operations
+run at once across the whole server: it bounds the chunk-buffer memory and
+drive contention a burst of large PUTs can create; requests over the cap
+queue rather than pile on. `0` (the default) sizes the cap automatically to
+half the available CPU parallelism. Values up to 65536 are accepted; there
+is rarely a reason to raise the automatic value unless large-object ingest
+is your dominant workload and profiling shows idle drives.
 
 ### Durability
 
@@ -195,10 +278,31 @@ heartbeat_interval_secs = 10
 rpc_timeout_secs = 30
 rpc_idle_timeout_secs = 90
 rpc_max_idle_per_host = 64
+# rpc_token = "shared-secret"     # authenticate the internal inter-node RPC surface
+# shard_read_timeout_secs = 5     # per-shard READ bound; see below
 replication_factor = 3            # copies per object (also the journal/replicated tier RF)
 placement_policy = "pack"         # "pack" (default) or "strict" — see below
 min_free_disk_bytes = 1073741824  # 1 GB
 ```
+
+**Shard read timeout.** `shard_read_timeout_secs` (default 5) bounds a
+single shard fetch on the read path; on expiry the read degrades to
+erasure-code reconstruction, the same path a confirmed-missing shard takes.
+The client-wide `rpc_timeout_secs` stays sized for replication writes. Size
+it to the worst-case whole-shard transfer on your slowest inter-node link:
+too small makes healthy-but-slow peers look degraded (a peer is
+short-circuited by the circuit breaker only after two consecutive
+timeouts; connection failures short-circuit immediately).
+
+**Internal RPC authentication.** `rpc_token` is a shared secret carried on
+every internal inter-node RPC (shard transfer, replication, journal mirror,
+topology) and required by every internal RPC endpoint when set. It must be
+identical on every node. When unset, the internal surface accepts
+unauthenticated requests and the server logs a startup warning: on any
+network that is not fully trusted, set `rpc_token` (and preferably TLS/mTLS
+under `[tls]`), since these endpoints share the public listen port and carry
+object shard data. The S3 API itself is always authenticated separately via
+SigV4.
 
 **Placement policy.** `placement_policy` controls how shards/replicas are spread across failure domains (zone/rack/host):
 

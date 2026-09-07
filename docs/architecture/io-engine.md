@@ -27,8 +27,8 @@ queue_depth = 128     # per-ring submission queue depth
 rings_per_drive = 2   # independent io_uring rings per drive
 ```
 
-- **`engine`** - `"standard"` always uses `tokio::fs`. `"uring"` requires `io_uring` to be available (Linux, kernel 5.6+, built with the `iouring` feature) and **fails to start** if it isn't - a misconfiguration is caught at startup, not silently downgraded. `"auto"` (the default) uses `io_uring` when available, falling back to standard with a logged reason otherwise.
-- **`queue_depth`** - submission queue depth per ring; only meaningful when the resolved engine is `io_uring`.
+- **`engine`** - `"standard"` always uses `tokio::fs`. `"uring"` requires `io_uring` to be available (Linux, kernel 5.6+, built with the `iouring` feature) and **fails to start** if it isn't - a misconfiguration is caught at startup, not silently downgraded. `"auto"` (the default) currently resolves to the standard engine unconditionally, with a logged reason: a ratified post-benchmark decision (see [Benchmark status](#benchmark-status)), not a probe result. When a benchmarked `io_uring` win lands, `auto` becomes probe-and-prefer without a config change on your side.
+- **`queue_depth`** - submission queue depth per ring; only meaningful when the resolved engine is `io_uring`. Must be at least 2: an acknowledged durable write is one kernel-linked write+fsync chain, and both entries must fit a single submission batch (startup validation rejects lower values).
 - **`rings_per_drive`** - how many independent rings (each its own ring thread) serve each drive. See [Why multiple rings](#why-multiple-rings-ringpool) below for why this exists and how `2` was chosen.
 
 **Current default behavior: `auto` resolves to `standard`.** This isn't a bug - see [Benchmark status](#benchmark-status) below. The `io_uring` path is fully implemented and tested, but hasn't yet demonstrated a throughput win over the standard engine for the write-path callers wired so far, on the hardware tested. Set `engine = "uring"` explicitly to opt in ahead of a default flip.
@@ -104,4 +104,12 @@ The reactor detects kernel capabilities at startup and enables features in tiers
 
 `io_uring` itself needs Linux 5.6+ as an absolute floor; the registered-files mechanism above needs a somewhat newer kernel for reliable, non-degraded behavior. Neolith probes kernel capabilities at startup and exposes the detected tier via the server's info endpoint, so an operator can check what a given host actually supports before opting in. For NVMe-backed deployments, a 6.17+ kernel with XFS is the recommended baseline in product deployment guidance.
 
-If `io_uring` initialization fails for any reason (old kernel, missing capability, seccomp policy blocking the required syscalls), `engine = "auto"` falls back to the standard engine and logs why; `engine = "uring"` fails startup instead, so an explicit request for `io_uring` that can't be honored is never silently downgraded.
+If `io_uring` initialization fails for any reason (old kernel, missing capability, seccomp policy blocking the required syscalls), `engine = "uring"` fails startup, so an explicit request for `io_uring` that can't be honored is never silently downgraded. (`engine = "auto"` never reaches that probe today: it resolves to the standard engine by policy, per [Configuration](#configuration).)
+
+## Runtime failure semantics
+
+The reactor's durability posture is fail loudly, never hang, never lie:
+
+- A short write (positive completion smaller than the buffer, e.g. `ENOSPC` mid-write or a quota limit) fails the whole write+fsync chain; the caller gets an error and the batch is never acked as durable.
+- Signal interruptions (`EINTR`) during submission are retried immediately and never counted as failures, so profilers and timers cannot destabilize the engine.
+- Persistent submission failures back off briefly and, after a bounded run (roughly 2.7 seconds worst case), the reactor fails every queued operation loudly and shuts down for the remainder of the process lifetime. From that point every journal submission through it errors immediately, and the `/health` endpoint reports HTTP 503 so orchestrators restart the process instead of routing traffic to it. Restart is the remedy; the engine is never rebuilt in-process.

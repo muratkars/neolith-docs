@@ -191,7 +191,7 @@ neolith-bench compress \
 
 ## Comparison Methodology
 
-When comparing Neolith against other object storage systems (MinIO, Ceph, etc.), follow these guidelines for fair comparisons:
+When comparing Neolith against other object storage systems (known open-source market solutions), follow these guidelines for fair comparisons:
 
 ### Hardware Normalization
 
