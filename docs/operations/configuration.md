@@ -54,25 +54,25 @@ max_clock_skew_seconds = 900      # SigV4 timestamp tolerance (15 min)
 drives = ["/mnt/disk1", "/mnt/disk2", "/mnt/disk3", "/mnt/disk4"]
 # Single-directory mode (for development)
 # data_dir = "/data/neolith"
+# Write-path scheme: "replicated" or "journal". Leave unset to get the
+# node-count-aware default described below.
+# scheme = "journal"
 ```
+
+**`scheme` default.** When `scheme` is left unset, a **single-node** deployment (no `[cluster]` block, or a `[cluster]` block with no `peers`) now defaults to `journal`: small objects commit through the group-commit journal and flush to erasure-coded stripes, instead of whole-object replication. A **multi-node cluster** (`[cluster] peers = [...]` non-empty) still defaults to `replicated` - journal cluster mode works when explicitly opted into (`scheme = "journal"` is always honored if set, on any cluster size), but until the owner-only-flush placement work lands it costs roughly 4.5x the storage of replication, so it stays an explicit choice rather than a silent default. `replicated` remains available (and is exactly what the pre-cutover default did) by setting `scheme = "replicated"` explicitly.
 
 ### Metadata / Listing Index
 
 ```toml
 [meta]
-# Listing index backend: "memory" (default) or "disk" (experimental)
-index = "memory"
-# Disk backend only: entries buffered in RAM per index shard before the
-# buffer is sealed to disk (the 60s background tick seals smaller buffers)
+# Entries buffered in RAM per index shard before the buffer is sealed to
+# disk (the 60s background tick seals smaller buffers)
 index_flush_threshold = 64000
 ```
 
-The listing index answers `ListObjects`/`ListObjectsV2` and powers batch GET key selection. Two backends:
+The listing index answers `ListObjects`/`ListObjectsV2` and powers batch GET key selection. It lives on disk as partition-sharded sorted runs (`.neolith/index/<bucket>/shard-XX/`), aligned with the cluster's placement partitions so a rebalance move touches one shard per bucket. Resident memory is fence pointers, bloom filters, and small per-shard write buffers, not the full key set - measured 26.6x-34.7x lower RSS than the in-RAM cache this replaced, growing with bucket size. Recovery is per-shard and incremental: only shards with unflushed writes at crash time are re-derived from object metadata. Listings are served from the stored index rows without per-key metadata reads.
 
-- **`memory`** (default): every bucket's full key set lives in RAM, persisted as a whole-cache snapshot (`.neolith/listing-cache.bin`) every 60 seconds and on shutdown. Simple and fast, but resident memory grows with total key count and a stale snapshot means a full rescan at startup.
-- **`disk`** (experimental): the index lives on disk as partition-sharded sorted runs (`.neolith/index/<bucket>/shard-XX/`), aligned with the cluster's placement partitions so a rebalance move touches one shard per bucket. Resident memory drops to fence pointers, bloom filters, and small per-shard write buffers; recovery is per-shard and incremental (only shards with unflushed writes at crash time are re-derived from object metadata). Listings are served from the stored index rows without per-key metadata reads.
-
-The first start with `index = "disk"` derives each bucket's index from object metadata (existing buckets are pre-warmed in the background at startup; new buckets derive on first access); any leftover memory-backend snapshot is deleted. Switching backends is safe in both directions: each backend invalidates the other's persisted state at startup, at the cost of one full listing rebuild on the next switch back. The disk index also pins the cluster partition count it was built with and refuses to start over a mismatched tree (delete `.neolith/index/` to force a re-derive). The backend cannot be hot-reloaded.
+The first start derives each bucket's index from object metadata (existing buckets are pre-warmed in the background at startup; new buckets derive on first access). The index pins the cluster partition count it was built with and refuses to start over a mismatched tree (delete `.neolith/index/` to force a re-derive). `index_flush_threshold` cannot be hot-reloaded.
 
 ### Erasure Coding
 
@@ -346,7 +346,7 @@ These settings require a full server restart to take effect:
 | `[erasure]` codec/shards | Changing EC params mid-flight would corrupt data |
 | `[cluster]` topology | Peer connections are established at startup |
 | `[server]` region | SigV4 scope is set at startup |
-| `[meta]` index | Listing backend is chosen at startup |
+| `[meta]` index_flush_threshold | Listing index shards are constructed at startup |
 | `[io]` engine/queue_depth/rings_per_drive | Ring pools are constructed once at startup |
 
 ## Environment Variables

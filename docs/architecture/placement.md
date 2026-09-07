@@ -172,6 +172,18 @@ tolerate = "auto"
 respread_interval_secs = 300  # 0 disables the background pass
 ```
 
+For deployments where re-spread's network egress matters more than op count
+(a large object migration burst on a shared or metered link), an optional
+bytes/sec cap can be set alongside the per-object delay:
+
+```toml
+[placement]
+respread_bandwidth_limit_bytes_per_sec = 10485760  # 10 MiB/s; unset = no cap
+```
+
+Unlike the fixed per-object delay, this scales with object size, so it bounds
+actual re-spread network load directly rather than object count.
+
 ### Reclaiming surplus copies
 
 Copy-up only adds copies; the old copies on nodes no longer in a partition's
