@@ -178,7 +178,7 @@ bytes/sec cap can be set alongside the per-object delay:
 
 ```toml
 [placement]
-respread_bandwidth_limit_bytes_per_sec = 10485760  # 10 MiB/s; unset = no cap
+respread_bandwidth_limit_bytes_per_sec = 10485760  # 10 MiB/s; omit to disable (0 is refused at startup)
 ```
 
 Unlike the fixed per-object delay, this scales with object size, so it bounds

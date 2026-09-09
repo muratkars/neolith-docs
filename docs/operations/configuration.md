@@ -179,6 +179,30 @@ from its data, naming the affected shard and both locations. Deliberate
 hand-migrated re-layouts delete the manifest file to re-adopt the current
 configuration.
 
+### Journal checksum algorithm
+
+```toml
+[journal]
+checksum_algorithm = "blake3"   # default
+```
+
+Selects the integrity checksum computed over every erasure-coded shard and
+object written by the journal. `blake3` (default) is cryptographic;
+`highwayhash256` and `xxh3_128` are non-cryptographic hashes that detect
+accidental corruption only and save a few percent of GET CPU. Two constraints
+make this a decision to take before the first write:
+
+- **Fixed at the journal's first boot.** The algorithm is recorded in a marker
+  inside the journal directory and a later change is refused at startup (there
+  is no re-checksum migration). A journal created before the marker existed is
+  treated as `blake3`; setting anything else over it is refused.
+- **Identical on every cluster node.** Peers verify each other's shards and
+  descriptors with their own algorithm. Every inter-node shard and descriptor
+  RPC announces the sender's algorithm and the receiver refuses a mismatch
+  with HTTP 400, so a misconfigured node fails loudly at its first transfer
+  instead of reading healthy shards as corrupted. A node with a non-default
+  setting logs a warning at startup in cluster mode.
+
 ### Large-object write concurrency
 
 ```toml
