@@ -47,10 +47,7 @@ When upgrading, the existing process must be stopped before the new one starts (
    INFO "all connections drained"
    ```
 
-5. **Persist state**: The listing cache is saved to `.neolith/listing-cache.bin` for fast restart:
-   ```
-   INFO count=45230 "listing cache snapshot saved"
-   ```
+5. **Flush state**: Every open listing-index shard's delta is sealed to its on-disk sorted run so the next start opens clean shards (a shard that misses this step is marked dirty and re-derived from object metadata on the next open).
 
 6. **Cancel background tasks**: Notification workers, heal scanner, lifecycle scanner, and other background tasks receive cancellation via `CancellationToken`.
 

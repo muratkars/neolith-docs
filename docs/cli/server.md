@@ -126,7 +126,7 @@ When `neolith server start` is invoked, the following steps execute in order:
 
 9. **Notification system** (if configured): Spawns the webhook delivery worker with configurable retry and timeout.
 
-10. **Listing cache restoration**: Attempts to load the persisted listing cache from `.neolith/listing-cache.bin`. Falls back to a full disk scan if the snapshot is missing or corrupted.
+10. **Listing index warm-up**: Starts a background task that derives the on-disk listing index (`.neolith/index/<bucket>/`) for each existing bucket, four buckets at a time. A bucket whose index is already derived and clean opens instantly; a bucket with crash-dirty shards re-derives only those shards; a bucket with no index yet (first boot after an upgrade from the retired in-memory listing cache) derives in full. A PUT or LIST to a bucket that has not finished deriving waits for that bucket's derive to complete. A stale `.neolith/listing-cache.bin` left by a pre-204d binary is deleted; it is never read.
 
 11. **Router assembly**: Merges S3 API routes, admin routes, operational endpoints (`/metrics`, `/health`), RPC routes (if clustered), and the web console (if the `console` feature is enabled).
 
@@ -148,7 +148,7 @@ The server handles `SIGTERM` and `SIGINT` (Ctrl+C) for graceful shutdown:
 1. **Stop accepting new connections**: The TCP listener is closed.
 2. **Begin draining**: New requests receive HTTP 503 `SlowDown` responses via the drain middleware.
 3. **Wait for in-flight requests**: The server waits up to `drain_timeout_seconds` (default: 30s) for active requests to complete.
-4. **Persist listing cache**: Saves the listing cache snapshot to `.neolith/listing-cache.bin` for fast restart.
+4. **Flush listing index**: Seals every open index shard's in-memory delta to its sorted run on disk so the next start opens clean shards (a shard that misses this step is marked dirty and re-derived from object metadata on the next open).
 5. **Cancel background tasks**: Notification workers and other background tasks receive cancellation signals.
 6. **Exit**: The process exits with code 0.
 
