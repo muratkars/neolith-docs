@@ -151,7 +151,7 @@ openssl verify -CAfile ca.pem /etc/neolith/tls/server.pem
 systemctl restart neolith
 ```
 
-The listing cache is an in-memory structure backed by a persistent snapshot (`.neolith/listing-cache.bin`). On startup, the server either loads the snapshot or performs a full disk scan. Both are safe operations that will bring the cache into a consistent state.
+The listing index lives on disk under `.neolith/index/<bucket>/` as partition-sharded sorted runs with per-shard dirty markers. On startup, clean shards open in place; shards marked dirty (unflushed writes at crash time) are re-derived from object metadata and the journal; a bucket with no index at all is derived in full on first touch or by the background warm-up. All of these are safe operations that bring the index into a consistent state. To force a full re-derive of one bucket, stop the server and remove `.neolith/index/<bucket>/`.
 
 ## Diagnostic Tools
 
