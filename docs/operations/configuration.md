@@ -175,9 +175,14 @@ so group-commit fsyncs on different shards stop contending for one device.
 Like `commit_shards`, choose it before first write: the server persists the
 shard-to-drive layout in a manifest and refuses to boot on ANY layout change
 (drive list reorder, insertion, or removal) that would remap a shard away
-from its data, naming the affected shard and both locations. Deliberate
-hand-migrated re-layouts delete the manifest file to re-adopt the current
-configuration.
+from its data, naming the affected shard and both locations. The same
+manifest records the ordered `[storage]` drive list itself, because every
+erasure-coded stripe shard is addressed by its position in that list: a
+reorder, insertion, removal or replacement at an existing index is refused
+regardless of `shard_drives`, naming the index and both drives. Appending
+new drives at the END of the list is allowed (existing indices keep their
+meaning) and is how capacity is added. Deliberate hand-migrated re-layouts
+delete the manifest file to re-adopt the current configuration.
 
 ### Large-object write concurrency
 
