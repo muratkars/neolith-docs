@@ -179,10 +179,18 @@ from its data, naming the affected shard and both locations. The same
 manifest records the ordered `[storage]` drive list itself, because every
 erasure-coded stripe shard is addressed by its position in that list: a
 reorder, insertion, removal or replacement at an existing index is refused
-regardless of `shard_drives`, naming the index and both drives. Appending
-new drives at the END of the list is allowed (existing indices keep their
-meaning) and is how capacity is added. Deliberate hand-migrated re-layouts
-delete the manifest file to re-adopt the current configuration.
+regardless of `shard_drives`, naming the index and both drives. Each drive
+root is also stamped with an identity marker (`.neolith/drive-id`) recorded
+next to its path, so drives that are physically re-plugged in a different
+order under device-name mounts are caught even though the configured paths
+look unchanged: the refusal says which drive is now behind which path. A
+drive with no marker at a recorded index is treated as a replacement for a
+failed drive (accepted with a warning, stamped fresh, its shards regenerated
+by scrub and heal). Mounting drives by filesystem UUID or label avoids the
+whole class of mix-ups. Appending new drives at the END of the list is
+allowed (existing indices keep their meaning) and is how capacity is added.
+Deliberate hand-migrated re-layouts delete the manifest file to re-adopt the
+current configuration.
 
 ### Large-object write concurrency
 
