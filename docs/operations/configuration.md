@@ -179,10 +179,31 @@ from its data, naming the affected shard and both locations. The same
 manifest records the ordered `[storage]` drive list itself, because every
 erasure-coded stripe shard is addressed by its position in that list: a
 reorder, insertion, removal or replacement at an existing index is refused
-regardless of `shard_drives`, naming the index and both drives. Appending
-new drives at the END of the list is allowed (existing indices keep their
-meaning) and is how capacity is added. Deliberate hand-migrated re-layouts
-delete the manifest file to re-adopt the current configuration.
+regardless of `shard_drives`, naming the index and both drives. Each drive
+root is also stamped once with an identity marker (`.neolith/drive-id`)
+recorded next to its path, so drives physically re-plugged in a different
+order under device-name mounts are caught even though the configured paths
+look unchanged: the refusal says which drive is now behind which path.
+Identities must be unique across the list (the same filesystem mounted at two
+paths is refused), and a recorded drive found at a newly appended path is
+reported as a move, not a new drive. Mounting drives by filesystem UUID or
+label avoids the whole class of mix-ups.
+
+Replacing a failed drive: keep its path in the list, mount the blank
+replacement there, create the file `<drive>/.neolith/accept-as-replacement`
+on it, and restart. The server stamps the replacement with a fresh identity,
+consumes the marker, and scrub/heal regenerate the shards that lived on the
+failed drive. Without that marker a drive with no identity stamp at a recorded
+index is refused, because an unmounted drive looks exactly like a blank one
+and accepting it silently would poison the layout record so the intact
+original is refused once it is remounted. A configured path that does not
+exist is refused outright (the server never creates drive roots).
+
+Appending new drives at the END of the list is allowed (existing indices keep
+their meaning) and is how capacity is added. Removing an index is not
+supported without a drive-index relocation tool (tracked); deliberate
+hand-migrated re-layouts delete the manifest file to re-adopt the current
+configuration.
 
 ### Large-object write concurrency
 
