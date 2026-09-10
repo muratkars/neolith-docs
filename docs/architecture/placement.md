@@ -128,6 +128,18 @@ historical behavior), and read-repair plus HLC remain the safety net for the
 residual cross-epoch window. Snapshots are derived from the gossiped topology,
 so they are identical on every node and need no extra coordination.
 
+The epoch advances whenever placement actually changes at runtime, not only
+across restarts: a peer marked offline or coming back, a node confirmed dead
+or decommissioned, a split-brain merge, or a wholesale topology adoption. The
+new epoch's snapshot is persisted at that moment, before any write, so every
+later write is pinned to a snapshot that describes the topology it was placed
+under. Volatile per-tick state (drive capacity, heartbeat times) never moves
+the epoch. Heartbeats carry each node's epoch, and a node lifts its own
+counter to at least every peer's, so the epoch reported by the admin info
+endpoint is comparable across the cluster. Reads still resolve the union of
+the pinned placement and the live one, which keeps objects written before
+this behavior existed readable.
+
 ## Observing protection
 
 `GET /_neolith/admin/v1/placement/protection` reports how many tracked
