@@ -202,13 +202,20 @@ exist is refused outright (the server never creates drive roots).
 Reorders are resolved, not refused: at startup the configured drives are put
 back into the recorded order by identity, so a list written in a different
 order, or a drive re-plugged at another device path, boots normally with no
-data moved (each such move is logged with the recorded index and the new
-path). The startup check still refuses what cannot be resolved: a recorded
-drive found neither by identity nor at its recorded path, two paths carrying
-one identity, and a shorter list (a removed drive shifts every later index).
+data moved (each such move is logged at warn with the recorded index and the
+new path, because the node then runs in a different order than configured).
+The startup check still refuses what cannot be resolved: a recorded drive
+found neither by identity nor at its recorded path, a different stamped drive
+sitting at a recorded path, a blank drive at the path a recorded drive
+vacated, two paths carrying one identity, and a shorter list (a removed drive
+shifts every later index). Index 0 also carries the metadata store, so it
+cannot be changed by reordering; to make another drive index 0, migrate the
+data deliberately and delete the shard-layout manifest to re-adopt the list.
 In a labeled topology the local node's `[[cluster.nodes]].drives` must match
-the resolved order, because peers address this node's shards by index into
-the advertised list.
+the resolved order (compared as paths), because peers address this node's
+shards by index into the advertised list; an entry that omits its drives
+advertises the resolved list. This is a tightening: a mismatch that used to
+boot with a warning is now refused at startup.
 
 Appending new drives at the END of the list is allowed (existing indices keep
 their meaning) and is how capacity is added. Removing an index is not
