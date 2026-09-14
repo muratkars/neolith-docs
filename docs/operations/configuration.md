@@ -189,6 +189,19 @@ paths is refused), and a recorded drive found at a newly appended path is
 reported as a move, not a new drive. Mounting drives by filesystem UUID or
 label avoids the whole class of mix-ups.
 
+Each drive also carries the identity of the journal it belongs to
+(`.neolith/journal-id`, a copy of the `.journal-id` file kept next to the
+shard-layout manifest). A stamped drive taken from another node and mounted
+here at a new path is therefore refused at startup, naming the journal it
+belongs to, instead of being adopted as new capacity and having its stripe
+shards swept as orphans. To reuse such a drive here deliberately, wipe it and
+remove both markers first. Drives stamped before this marker existed are
+accepted as before and receive the journal identity on the next start. The
+journal's own identity record lives next to the shard-layout manifest; if it
+is lost with that directory (a replaced index 0, a metadata wipe), it is
+recovered from the drives' copies, so deleting the manifest to re-adopt a
+layout keeps working and never requires wiping a drive.
+
 Replacing a failed drive: keep its path in the list, mount the blank
 replacement there, create the file `<drive>/.neolith/accept-as-replacement`
 on it, and restart. The server stamps the replacement with a fresh identity,
