@@ -243,11 +243,17 @@ stripe shards and objects: `blake3` (default, cryptographic),
 cheaper on reads). It is fixed at the journal's first start (a change is
 refused at startup) and must be identical on every node of a cluster:
 shards and descriptors checksummed under one algorithm read as corrupted
-under the other. Each node advertises its algorithm in the gossiped
-topology; a peer that advertises a different one is fenced offline at the
-next heartbeat, before any shard is placed on it, and a node whose every
-peer disagrees logs an error naming itself as the misconfigured one. The
-inter-node RPC layer also refuses mismatched shard and descriptor writes.
+under the other. Each node advertises the algorithm it actually hashes
+with in the gossiped topology; a peer that advertises a different one is
+fenced offline at the first heartbeat that reaches it, with a warning that
+names both algorithms, and stays fenced until it answers with a matching
+one (a fresh journal on the right algorithm). Until then, and for peers
+running a build that predates the field, the inter-node RPC layer refuses
+mismatched shard and descriptor writes. The fenced peer's advertised
+algorithm is visible in the topology and the admin node view, so an offline
+peer can be told apart from a network partition. Pairwise disagreement
+cannot identify which side is misconfigured: whichever node differs from
+the intended cluster-wide setting is the one to rebuild.
 
 ### Large-object write concurrency
 
