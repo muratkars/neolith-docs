@@ -235,6 +235,20 @@ their meaning) and is how capacity is added. Removing an index is not
 supported without a drive relocation tool (tracked); deliberate hand-migrated
 re-layouts delete the manifest file to re-adopt the current configuration.
 
+### Journal checksum algorithm
+
+`[journal] checksum_algorithm` selects the integrity hash for erasure-coded
+stripe shards and objects: `blake3` (default, cryptographic),
+`highwayhash256`, or `xxh3_128` (both non-cryptographic and marginally
+cheaper on reads). It is fixed at the journal's first start (a change is
+refused at startup) and must be identical on every node of a cluster:
+shards and descriptors checksummed under one algorithm read as corrupted
+under the other. Each node advertises its algorithm in the gossiped
+topology; a peer that advertises a different one is fenced offline at the
+next heartbeat, before any shard is placed on it, and a node whose every
+peer disagrees logs an error naming itself as the misconfigured one. The
+inter-node RPC layer also refuses mismatched shard and descriptor writes.
+
 ### Large-object write concurrency
 
 ```toml
