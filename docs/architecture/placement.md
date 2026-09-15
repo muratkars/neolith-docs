@@ -140,6 +140,8 @@ endpoint is comparable across the cluster. Reads still resolve the union of
 the pinned placement and the live one, which keeps objects written before
 this behavior existed readable.
 
+The pinned topology for an epoch is decoded once per process and cached, so a read never touches disk to resolve its pin; when the pinned topology places exactly like the live one (a peer that went offline and came back, for example), the read resolves live only. The union costs only when the two placements actually differ.
+
 ## Observing protection
 
 `GET /_neolith/admin/v1/placement/protection` reports how many tracked
