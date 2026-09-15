@@ -126,7 +126,7 @@ When `neolith server start` is invoked, the following steps execute in order:
 
 9. **Notification system** (if configured): Spawns the webhook delivery worker with configurable retry and timeout.
 
-10. **Listing index warm-up**: Starts a background task that derives the on-disk listing index (`.neolith/index/<bucket>/`) for each existing bucket, four buckets at a time. A bucket whose index is already derived and clean opens instantly; a bucket with crash-dirty shards re-derives only those shards; a bucket with no index yet (first boot after an upgrade from the retired in-memory listing cache) derives in full. A PUT or LIST to a bucket that has not finished deriving waits for that bucket's derive to complete. A stale `.neolith/listing-cache.bin` left by a pre-204d binary is deleted; it is never read.
+10. **Listing index warm-up**: Starts a background task that derives the on-disk listing index (`.neolith/index/<bucket>/`) for each existing bucket, four buckets at a time. A bucket whose index is already derived and clean opens instantly; a bucket with crash-dirty shards re-derives only those shards; a bucket with no index yet (first boot after an upgrade from the retired in-memory listing cache) derives in full. A PUT or LIST to a bucket that has not finished deriving waits for that bucket's derive to complete. A stale `.neolith/listing-cache.bin` left by a pre-204d binary is deleted; it is never read. The journal's live keys are scanned once for the whole warm-up, not once per bucket, so a large journal does not stall writes for every bucket derived.
 
 11. **Router assembly**: Merges S3 API routes, admin routes, operational endpoints (`/metrics`, `/health`), RPC routes (if clustered), and the web console (if the `console` feature is enabled).
 
