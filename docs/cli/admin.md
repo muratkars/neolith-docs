@@ -92,6 +92,68 @@ $ neolith admin heal stop
 }
 ```
 
+## Drive Commands
+
+A `[storage]` drive that is permanently lost and cannot be replaced at the same path is retired: its index stays in the list (every erasure-coded shard is addressed by position) but is excluded from placement for good, and every stripe that had a shard on it is re-striped onto the remaining drives. See [Configuration](../operations/configuration.md#journal-wal-drive-sharding) for what the startup check does with a retired index.
+
+### `neolith admin drive retire`
+
+Start retiring a drive index on the node behind `--endpoint`. Runs in the background; nothing changes if any affected stripe is beyond its parity budget unless `--force` is given.
+
+```
+neolith admin drive retire <INDEX> [--endpoint URL] [--force]
+```
+
+**Options:**
+
+| Option | Default | Description |
+|---|---|---|
+| `<INDEX>` | | The drive's position in `[storage] drives` (index 0 cannot be retired) |
+| `--force` | off | Retire even when some stripes are beyond their parity budget; their data is already lost and they stay unreadable |
+
+```json
+{
+  "message": "drive retirement started",
+  "index": 2,
+  "force": false
+}
+```
+
+### `neolith admin drive retire-status`
+
+Progress of the running (or last) retirement and every retired index the node records.
+
+```
+neolith admin drive retire-status [--endpoint URL] [--output text|json]
+```
+
+```json
+{
+  "running": true,
+  "progress": {
+    "phase": "restriping",
+    "stripes_total": 412,
+    "stripes_done": 96,
+    "restriped": 96,
+    "in_flight_parts": 0,
+    "unrecoverable": [],
+    "failed": []
+  },
+  "last": { "index": 2, "status": "running", "started_at": 1789500000000, "outcome": null, "error": null },
+  "retired_drives": [2]
+}
+```
+
+`phase` is `checking` while nothing has changed yet, then `restriping`. When the job ends with stripes still referencing the index (parts of uploads that were in flight, stripes beyond their parity budget under `--force`, or failures), `last.error` says how many of each; re-run `retire` once uploads have completed.
+
+### `neolith admin drive retire-stop`
+
+Stop the running retirement after its current chunk. The index stays retired; a later `retire` finishes what is left.
+
+```
+neolith admin drive retire-stop [--endpoint URL]
+```
+
 ## Rebalance Commands
 
 When nodes are added or removed, data distribution across the cluster may become uneven. Rebalance migrates partitions to achieve balanced distribution according to the TCH placement algorithm.
