@@ -117,8 +117,12 @@ cluster `placement_policy` decides:
 
 Object metadata records the erasure layout but not node locations, so reads
 recompute placement. To keep that correct when the cluster changes shape,
-Neolith stamps each partition with the cluster epoch and persists a
-deterministic topology snapshot per epoch. Reads resolve placement over the
+Neolith stamps each partition with the cluster epoch and persists the
+topology snapshot the epoch names. Snapshots are stored by their placement
+view (a stable hash of exactly the fields placement reads), and the epoch is
+an alias to a view: two nodes that saw the same placement-relevant topology
+hold the same view under the same name, which is what lets a view be shared
+between nodes. Reads resolve placement over the
 partition's *pinned* snapshot rather than the live topology, so adding or
 removing a node does not mislocate existing data. Because the snapshot records
 each node's drives, the read resolves the same `(node, drive)` the write chose,
