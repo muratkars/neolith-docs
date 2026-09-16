@@ -143,12 +143,25 @@ new epoch's snapshot is persisted at that moment, before any write, so every
 later write is pinned to a snapshot that describes the topology it was placed
 under. Volatile per-tick state (drive capacity, heartbeat times) never moves
 the epoch. Heartbeats do not carry epochs (the epoch reported by the admin
-info endpoint is this node's own counter). Reads resolve the union of the
-pinned placement and the live one: a peer that wrote the same partition did
-so under its own view and stamped its own pin, so this node's pin alone
-cannot name every copy. Retiring that union needs a cluster-wide view of the
-placements a partition was written under; the design for it is tracked
-under GH #332.
+info endpoint is this node's own counter); what they carry is a digest of
+each node's partition-to-view map. A peer that wrote the same partition did
+so under its own view and stamped its own pin, so one node's pin alone
+cannot name every copy: instead every node publishes which placement view it
+pinned each partition under, peers fetch the map (and any view they do not
+hold, verified against its id) when the digest changes, and a read resolves
+the union of the placements under every view the partition was written
+under plus the live placement. That is exact (every copy is reached) and
+bounded (one placement per distinct view, usually one; live is free when it
+equals a pin). The live placement stays in the union because a peer's write
+since the last topology change sits at live until the peer's digest has
+propagated.
+
+Two safety nets from before the exchange remain by default: while a node is
+draining, reads also resolve the pre-drain placement, and a batch read that
+misses at the placement walks every readable node. `[placement] exact_reads
+= true` turns both off; set it once every node runs a build with the
+exchange and the maps have been fetched (the exchange is on by default, the
+flag only drops the nets).
 
 The pinned topology for an epoch is decoded once per process and cached, so a read never touches disk to resolve its pin; when the pinned topology places exactly like the live one (a peer that went offline and came back, for example), the read resolves live only. The union costs only when the two placements actually differ.
 
@@ -194,6 +207,7 @@ not starve foreground traffic, and the pass shuts down cleanly on stop.
 [placement]
 tolerate = "auto"
 respread_interval_secs = 300  # 0 disables the background pass
+exact_reads = false           # true once every node runs the placement exchange
 ```
 
 For deployments where re-spread's network egress matters more than op count
