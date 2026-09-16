@@ -231,9 +231,34 @@ advertises the resolved list. This is a tightening: a mismatch that used to
 boot with a warning is now refused at startup.
 
 Appending new drives at the END of the list is allowed (existing indices keep
-their meaning) and is how capacity is added. Removing an index is not
-supported without a drive relocation tool (tracked); deliberate hand-migrated
-re-layouts delete the manifest file to re-adopt the current configuration.
+their meaning) and is how capacity is added. Removing an index outright is
+not supported; deliberate hand-migrated re-layouts delete the manifest file
+to re-adopt the current configuration.
+
+Retiring a drive that is permanently lost with no same-path replacement:
+run `neolith admin drive retire <index>` on the node (the drive's position
+in `[storage] drives`). The job first checks that every stripe with a shard
+on that drive is still within its parity budget and refuses otherwise
+(nothing is changed; `--force` retires anyway and reports the stripes whose
+data is already lost). It then marks the index retired, so no new shard is
+placed on it from that moment (in a cluster the retirement is advertised in
+the topology on every heartbeat, the node refuses shard writes addressed to
+the index meanwhile, and each peer re-stripes the stripes it owns that had a
+shard on the drive; see `peer_drive_retirements` in the status output),
+records the retirement in the shard-layout manifest, and re-stripes every
+affected stripe onto the remaining drives in small chunks between regular
+writes: objects stay readable throughout, and multipart parts are moved as
+well. A part that
+belongs to an upload still in progress is reported and left for a re-run
+once the upload completes; `neolith admin drive retire-status` shows the
+progress and every retired index, `neolith admin drive retire-stop` stops
+the job between chunks (the index stays retired and a re-run finishes what
+is left). After the job the drive's line may stay in the configuration or
+be removed: a retired index keeps its position with no drive behind it, the
+startup check does not probe it, and a restart never needs the drive.
+Index 0 (it carries the metadata store) and, with `shard_drives = true`, a
+drive hosting a commit shard's write-ahead log cannot be retired; those are
+replaced in place with the accept-as-replacement marker.
 
 ### Journal checksum algorithm
 
