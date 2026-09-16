@@ -117,8 +117,12 @@ cluster `placement_policy` decides:
 
 Object metadata records the erasure layout but not node locations, so reads
 recompute placement. To keep that correct when the cluster changes shape,
-Neolith stamps each partition with the cluster epoch and persists a
-deterministic topology snapshot per epoch. Reads resolve placement over the
+Neolith stamps each partition with the cluster epoch and persists the
+topology snapshot the epoch names. Snapshots are stored by their placement
+view (a stable hash of exactly the fields placement reads), and the epoch is
+an alias to a view: two nodes that saw the same placement-relevant topology
+hold the same view under the same name, which is what lets a view be shared
+between nodes. Reads resolve placement over the
 partition's *pinned* snapshot rather than the live topology, so adding or
 removing a node does not mislocate existing data. Because the snapshot records
 each node's drives, the read resolves the same `(node, drive)` the write chose,
@@ -139,12 +143,31 @@ new epoch's snapshot is persisted at that moment, before any write, so every
 later write is pinned to a snapshot that describes the topology it was placed
 under. Volatile per-tick state (drive capacity, heartbeat times) never moves
 the epoch. Heartbeats do not carry epochs (the epoch reported by the admin
-info endpoint is this node's own counter). Reads resolve the union of the
-pinned placement and the live one: a peer that wrote the same partition did
-so under its own view and stamped its own pin, so this node's pin alone
-cannot name every copy. Retiring that union needs a cluster-wide view of the
-placements a partition was written under; the design for it is tracked
-under GH #332.
+info endpoint is this node's own counter); what they carry is a digest of
+each node's partition-to-view map. A peer that wrote the same partition did
+so under its own view and stamped its own pin, so one node's pin alone
+cannot name every copy: instead every node publishes, per partition, every
+placement view it has written that partition under (an object written before
+a later re-stamp sits at the older placement, so the latest pin alone is not
+enough; the set is recorded in the partition's durable stamp and survives
+restarts), peers fetch the map (and any view they do not hold, verified
+against its id, from any node that holds it) when the digest changes, and a
+read resolves the union of the placements under every view the partition was
+written under plus the live placement. That is exact (every copy is reached)
+and bounded (one placement per distinct view, usually one; live is free when
+it equals a pin). The live placement stays in the union because a peer's
+write since the last topology change sits at live until the peer's digest
+has propagated.
+
+Two safety nets from before the exchange remain by default: while a node is
+draining, reads also resolve the pre-drain placement, and a batch read that
+misses at the placement walks every readable node. `[placement] exact_reads
+= true` lets a node drop both, but only while the exchange is complete for
+it: every peer that answers heartbeats advertises a digest and this node
+holds that peer's map under it. A peer on an older build, an offline peer,
+or a peer not fetched yet since this node restarted keeps the nets on, on
+this node, with no operator action; the flag is the switch, completeness is
+the gate. The exchange itself is on by default.
 
 The pinned topology for an epoch is decoded once per process and cached, so a read never touches disk to resolve its pin; when the pinned topology places exactly like the live one (a peer that went offline and came back, for example), the read resolves live only. The union costs only when the two placements actually differ.
 
@@ -190,6 +213,7 @@ not starve foreground traffic, and the pass shuts down cleanly on stop.
 [placement]
 tolerate = "auto"
 respread_interval_secs = 300  # 0 disables the background pass
+exact_reads = false           # true lets the nets drop while the exchange is complete
 ```
 
 For deployments where re-spread's network egress matters more than op count
