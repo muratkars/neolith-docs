@@ -242,10 +242,13 @@ on that drive is still within its parity budget and refuses otherwise
 (nothing is changed; `--force` retires anyway and reports the stripes whose
 data is already lost). It then marks the index retired, so no new shard is
 placed on it from that moment (in a cluster the retirement is advertised in
-the topology, so peers stop targeting it too), records the retirement in the
-shard-layout manifest, and re-stripes every affected stripe onto the
-remaining drives in small chunks between regular writes: objects stay
-readable throughout, and multipart parts are moved as well. A part that
+the topology on every heartbeat, the node refuses shard writes addressed to
+the index meanwhile, and each peer re-stripes the stripes it owns that had a
+shard on the drive; see `peer_drive_retirements` in the status output),
+records the retirement in the shard-layout manifest, and re-stripes every
+affected stripe onto the remaining drives in small chunks between regular
+writes: objects stay readable throughout, and multipart parts are moved as
+well. A part that
 belongs to an upload still in progress is reported and left for a re-run
 once the upload completes; `neolith admin drive retire-status` shows the
 progress and every retired index, `neolith admin drive retire-stop` stops

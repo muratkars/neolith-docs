@@ -133,18 +133,27 @@ neolith admin drive retire-status [--endpoint URL] [--output text|json]
   "progress": {
     "phase": "restriping",
     "stripes_total": 412,
-    "stripes_done": 96,
-    "restriped": 96,
-    "in_flight_parts": 0,
-    "unrecoverable": [],
-    "failed": []
+    "outcome": {
+      "node": null,
+      "drive": 2,
+      "affected": 412,
+      "restriped": 96,
+      "unreferenced": 3,
+      "in_flight_parts": [],
+      "unrecoverable": [],
+      "failed": [],
+      "cancelled": false
+    }
   },
   "last": { "index": 2, "status": "running", "started_at": 1789500000000, "outcome": null, "error": null },
-  "retired_drives": [2]
+  "retired_drives": [2],
+  "peer_drive_retirements": [
+    { "peer": "node-b", "drive": 1, "progress": { "phase": "restriping", "stripes_total": 40, "outcome": { "node": "node-b", "drive": 1, "affected": 40, "restriped": 40, "unreferenced": 0, "in_flight_parts": [], "unrecoverable": [], "failed": [], "cancelled": false } } }
+  ]
 }
 ```
 
-`phase` is `checking` while nothing has changed yet, then `restriping`. When the job ends with stripes still referencing the index (parts of uploads that were in flight, stripes beyond their parity budget under `--force`, or failures), `last.error` says how many of each; re-run `retire` once uploads have completed.
+`phase` is `idle`, `checking` (nothing has changed yet) or `restriping`; `progress.outcome` advances after every chunk. When the job ends with stripes still referencing the index (parts of uploads that were in flight, stripes beyond their parity budget under `--force`, or failures), `last.error` says how many of each; re-run `retire` once uploads have completed. `peer_drive_retirements` lists the re-stripes this node ran for drives OTHER nodes retired: stripes this node owns may have a shard on a peer's drive, and only the owner can move them, so every node does its own part when it observes a peer's retirement over the heartbeat.
 
 ### `neolith admin drive retire-stop`
 
