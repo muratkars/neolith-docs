@@ -125,8 +125,12 @@ each node's drives, the read resolves the same `(node, drive)` the write chose,
 not just the same node. Until a partition has been
 stamped, reads fall back to recomputing over the live topology (identical to the
 historical behavior), and read-repair plus HLC remain the safety net for the
-residual cross-epoch window. Snapshots are derived from the gossiped topology,
-so they are identical on every node and need no extra coordination.
+residual cross-epoch window. Epochs and their snapshots are a per-node
+record: the epoch advances whenever this node's view of placement changes,
+and the snapshot for an epoch is this node's topology at that moment. Two
+nodes at the same epoch number may hold different topologies for it; nothing
+compares epochs across nodes, and a pin only has to be resolvable on the node
+that wrote it, so the record needs no coordination.
 
 The epoch advances whenever placement actually changes at runtime, not only
 across restarts: a peer marked offline or coming back, a node confirmed dead
@@ -134,11 +138,13 @@ or decommissioned, a split-brain merge, or a wholesale topology adoption. The
 new epoch's snapshot is persisted at that moment, before any write, so every
 later write is pinned to a snapshot that describes the topology it was placed
 under. Volatile per-tick state (drive capacity, heartbeat times) never moves
-the epoch. Heartbeats carry each node's epoch, and a node lifts its own
-counter to at least every peer's, so the epoch reported by the admin info
-endpoint is comparable across the cluster. Reads still resolve the union of
-the pinned placement and the live one, which keeps objects written before
-this behavior existed readable.
+the epoch. Heartbeats do not carry epochs (the epoch reported by the admin
+info endpoint is this node's own counter). Reads resolve the union of the
+pinned placement and the live one: a peer that wrote the same partition did
+so under its own view and stamped its own pin, so this node's pin alone
+cannot name every copy. Retiring that union needs a cluster-wide view of the
+placements a partition was written under; the design for it is tracked
+under GH #332.
 
 The pinned topology for an epoch is decoded once per process and cached, so a read never touches disk to resolve its pin; when the pinned topology places exactly like the live one (a peer that went offline and came back, for example), the read resolves live only. The union costs only when the two placements actually differ.
 
