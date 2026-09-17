@@ -5,7 +5,7 @@ title: "Lifecycle Rules"
 
 # Lifecycle Rules
 
-Lifecycle rules automate the expiration and cleanup of objects in a bucket. Neolith supports expiration-based lifecycle policies for both current and noncurrent object versions.
+Lifecycle rules automate the expiration, cleanup and tiering of objects in a bucket. Neolith supports expiration-based policies for both current and noncurrent object versions, and `Transition` rules that move an object's bytes to a remote S3-compatible tier while the object stays readable at its key.
 
 ## Configuring Lifecycle Rules
 
@@ -227,6 +227,72 @@ Lifecycle configuration is stored as a `.lifecycle.json` sidecar file in the buc
   .cors.json          # CORS configuration
 ```
 
+## Transitions and Cloud Tiering
+
+A `Transition` rule names a storage class. When a configured tier target carries that name, the lifecycle scanner moves matching objects to it; without one, the transition is a metadata-only class change.
+
+### Configuring a tier target
+
+Tier targets are declared in the server config. The `name` is the `StorageClass` a rule refers to.
+
+```toml
+[[tiers]]
+name = "GLACIER"                     # the StorageClass a Transition rule names
+provider = "s3"                      # only "s3" moves bytes today (see below)
+endpoint = "https://s3.example.com"  # any S3-compatible endpoint
+bucket = "neolith-archive"           # objects land under <bucket>/<source-bucket>/<key>
+access_key = "AKIA..."               # optional: unsigned requests when omitted
+secret_key = "..."
+region = "us-east-1"                 # optional, SigV4 scope only
+```
+
+Tier clients are built at startup. A target added through the admin API (`PUT /_neolith/admin/v1/tiers`) is persisted to the config and takes effect on the next start.
+
+### A transition rule
+
+```xml
+<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Rule>
+    <ID>archive-after-90d</ID>
+    <Status>Enabled</Status>
+    <Filter><Prefix>datasets/2025/</Prefix></Filter>
+    <Transition>
+      <Days>90</Days>
+      <StorageClass>GLACIER</StorageClass>
+    </Transition>
+  </Rule>
+</LifecycleConfiguration>
+```
+
+### What a transition does
+
+1. The scanner reads the object's stored bytes and uploads them to the tier with a SigV4-signed PUT. Nothing local changes until the upload has succeeded.
+2. The object's metadata record is rewritten to carry the new storage class and the tier location (tier name, remote key, timestamp, size). This record is the only pointer to the bytes from now on.
+3. The local copy is dropped: the journal entry is tombstoned, inline bytes leave the record, and a separate data file is removed. The order (record first, local copy second) means there is no moment at which the key answers 404.
+
+### Reading a tiered object
+
+An archived object needs no restore call. It reads with a plain request at the same key:
+
+| Request | Behaviour |
+|---|---|
+| `GET` | The bytes are fetched from the tier and served; `x-amz-storage-class` carries the tier's class. Compressed or encrypted objects are decompressed and decrypted as usual. |
+| `HEAD` | Answered from the local record; the tier is not contacted. |
+| `GET` with `Range` | For an uncompressed, unencrypted object only the requested byte range is fetched from the tier. Otherwise the whole object is fetched and the range is cut locally. |
+| Batch GET (`?batch`) | Reads through the same record. |
+| Conditional headers (`If-None-Match`, `If-Match`, ...) | Evaluated against the local record before the tier is contacted. |
+
+Failure modes a client can see:
+
+| Status | Meaning |
+|---|---|
+| `503 ServiceUnavailable` | The tier refused or failed the read (unreachable, 4xx or 5xx from the remote). Retry. |
+| `500 InternalError` | The record names a tier this node has no client for, or the record is malformed. Fix the `[[tiers]]` configuration; a retry will not help. |
+
+### Provider support
+
+Only `provider = "s3"` has a transport. `gcs` and `azure` are accepted in the configuration but a transition to either is refused and logged, and the object stays where it is. An earlier build reported such uploads as successful and dropped the local copy; if you ran transitions to a GCS or Azure target on that build, treat those objects as lost and restore them from a backup.
+
 ## Common Use Cases
 
 ### Log Retention (30 days)
@@ -260,6 +326,6 @@ EOF
 | Expiration (Days) | Supported |
 | Expiration (Date) | Supported |
 | NoncurrentVersionExpiration | Supported |
-| Transition (storage class) | Not supported (single storage class) |
+| Transition (storage class) | Supported: metadata-only without a tier target, moves bytes to an S3-compatible tier with one (see above) |
 | AbortIncompleteMultipartUpload | Handled by multipart 24h TTL |
 | ExpiredObjectDeleteMarker | Not yet supported |
