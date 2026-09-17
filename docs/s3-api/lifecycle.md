@@ -291,7 +291,15 @@ Failure modes a client can see:
 
 ### Provider support
 
-Only `provider = "s3"` has a transport. `gcs` and `azure` are accepted in the configuration but a transition to either is refused and logged, and the object stays where it is. An earlier build reported such uploads as successful and dropped the local copy; if you ran transitions to a GCS or Azure target on that build, treat those objects as lost and restore them from a backup.
+Only `provider = "s3"` has a transport. A `[[tiers]]` entry with `provider = "gcs"` or `"azure"`, an unknown provider string, an empty endpoint or bucket, or a name declared twice is refused at startup: the server does not boot until the configuration is fixed. An earlier build accepted GCS and Azure targets, reported their uploads as successful and dropped the local copy; if you ran transitions to such a target on that build, treat those objects as lost and restore them from a backup.
+
+### Moving between tiers, deleting, and local copies
+
+- **Two rules, two tiers.** A later `Transition` to a class that has its own tier target moves the bytes from the current tier to the new one (read from the current tier, upload, repoint the record, delete the previous tier's copy). A later `Transition` to a class with no tier target only relabels the storage class and keeps the tier pointer.
+- **Delete releases the remote copy.** `DELETE` of a tiered object (single or batch) and lifecycle expiration remove the remote copy along with the record. In a versioned bucket a delete creates a marker and keeps the version, so the remote copy stays with it.
+- **Local bytes win.** If a record names a tier but the object's bytes are also present locally (a record written by an earlier build, which never removed the data file), reads serve the local copy and never contact the tier.
+- **Concurrent writes win.** A `PUT` that lands on the key while its bytes are being uploaded is kept: the transition notices, discards its upload and leaves the record alone; the object is evaluated again on the next scan.
+- **Large objects stream.** A whole-object or ranged `GET` of an uncompressed, unencrypted tiered object streams from the tier to the client without being buffered on the node; `content-length` comes from the tier's response.
 
 ## Common Use Cases
 
