@@ -211,11 +211,18 @@ Inter-node communication uses HTTP/2 over the same port (9000) as client traffic
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/_neolith/v1/topology` | GET | Heartbeat and topology exchange |
+| `/_neolith/v1/cluster/topology` | GET | Heartbeat and topology exchange |
 | `/_neolith/v1/replicate/{bucket}/{key}` | PUT | Write replication |
+| `/_neolith/v1/replicate/{bucket}/{key}` | GET | A replica's metadata (and inline bytes for small objects), used by read-repair and to locate a key |
 | `/_neolith/v1/replicate/{bucket}/{key}` | DELETE | Delete replication |
-| `/_neolith/v1/shard/{bucket}/{key}/{shard}` | GET | Shard read (for repair) |
+| `/_neolith/v1/object/{bucket}/{key}` | GET | Holder-side object read: the node that holds the object serves its stored bytes, whole or the `Range: bytes=a-b` of them, decoding from its own stripes |
+| `/_neolith/v1/shard/{partition}/{shard_id}` | GET | Shard read (for repair); honours `Range: bytes=a-b` |
+| `/_neolith/v1/stripe-shard/{owner}/{stripe_id}/{shard_id}` | GET, PUT | Journal stripe shard hosted for a peer; GET honours `Range: bytes=a-b` |
 | `/_neolith/v1/list/{bucket}` | GET | Node-local listing page for distributed LIST fan-out |
+
+### Reads at a node that does not hold the object
+
+A `GET` can arrive at any node. If the node holds the object (journal entry, inline bytes or data file) it serves it locally. Otherwise it asks the object's placement replicas for their metadata, takes the newest by hybrid logical clock, and reads the stored bytes from that holder over the object route above: whole for the general case, or exactly the requested range for an uncompressed, unencrypted object. The holder decodes from its own erasure-coded stripes, so the reading node needs neither the stripe layout nor the codec. The same route serves read-repair: when a replica has a newer version than the local record, the newer body is read from that replica so headers and body always describe one version. A remote shard read (degraded reconstruction, scrub) moves only the byte window it needs; a peer from before ranged reads existed answers with the whole shard and the reader cuts it locally.
 
 ### Distributed LIST
 
