@@ -99,6 +99,12 @@ Neolith always writes locally before replicating. This ensures:
 - Latency is bounded by the slowest quorum member, not the slowest node overall
 - The local write serves as the "vote" of the writing node
 
+### Last-Writer-Wins at the Replica
+
+A replica applies an incoming replicated write only if it carries a higher HLC than the version the replica already holds, checking its journal first and then its metadata store. A write with an equal or lower HLC (a retried fan-out that raced a newer write, a repaired copy pushed by read-repair, a delayed feed) is acknowledged and dropped: its outcome is already superseded, so the coordinator's quorum count stays correct, and the replica reports it under `x-neolith-replicate: stale`. If the replica held the older version in its journal, that entry is tombstoned when the newer record is written, so journal-first reads serve the new version. Dropped writes are counted in `neolith_replicate_stale_dropped_total`.
+
+Replicated deletes follow the same order: a copy with a strictly higher HLC survives the delete (409 Conflict to the sender), an equal HLC lets the delete win, and a journal copy is tombstoned along with the metadata record.
+
 ### Rollback on Quorum Failure
 
 If the write fails to achieve quorum (fewer than N/2+1 acknowledgments):
