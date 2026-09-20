@@ -119,27 +119,29 @@ This ensures that a partially-replicated write is never visible to clients.
 
 ### Standard Read
 
-A GET request reads from the local node if it has the data:
+A GET request at any node:
 
-1. Locate the object via TCH (key -> partition -> node -> drive)
-2. Read metadata (MetaView for HEAD, full ObjectMeta for GET)
-3. Read K shards, verify BLAKE3 checksums
-4. EC decode if any shards are degraded
-5. Decrypt and decompress
-6. Return response to client
+1. Resolves the local copy (journal entry, inline bytes, or data file) and its metadata (the zero-copy metadata view for HEAD, the full record for GET)
+2. In cluster mode, runs read-repair against the object's placement replicas (below) before serving
+3. Reads the stored bytes locally, or from the replica that holds the newest version when this node does not (see Cluster Architecture, reads at a node that does not hold the object)
+4. Reads K shards and verifies their checksums, decoding if any are degraded
+5. Decrypts and decompresses
+6. Returns the response, with `x-neolith-hlc` carrying the HLC of the write that produced the object
 
 ### Read-Repair
 
-After serving the response (without adding client-visible latency), Neolith performs background read-repair:
+Before serving a clustered GET, the node compares its copy with every placement replica of the object:
 
-1. Select one remote replica node
-2. Fetch only the HLC timestamp from the remote (lightweight RPC)
-3. Compare local HLC with remote HLC:
-   - **Local is newer**: Push local version to remote (heal the remote)
-   - **Remote is newer**: Fetch remote version and update local (heal local)
-   - **Equal**: No action needed
+1. Resolve the replica set over the partition's pinned placement (the nodes the object was written to, not where the live topology would place it now)
+2. Ask every remote replica for its metadata concurrently, bounded by the read timeout
+3. Take the newest answer by HLC (a delete marker counts as a version)
+4. If it is newer than the local copy, install its metadata locally, update the listing index, and read the body from that replica so headers and body describe one version; if the local copy is newest or equal, serve it
 
-Read-repair provides eventual convergence of all replicas. Over time, reads naturally heal any inconsistencies without a dedicated anti-entropy protocol.
+Every replica is consulted, not the first that answers: with a replication factor of 3 and a write quorum of 2, a write that landed on two replicas would otherwise be missed whenever the lagging replica answered first, and read-after-write consistency would be weaker than the write quorum implies. Read-repair heals the node that served the read; the replicas it queried are healed by their own reads. Over time, reads converge all replicas without a dedicated anti-entropy protocol.
+
+### The `x-neolith-hlc` Header
+
+`GET` and `HEAD` responses carry `x-neolith-hlc`, the HLC stamp of the write that produced the object. It is the version authority a cache in front of the cluster should revalidate on: an ETag repeats when identical content is written twice, the HLC does not. Single-node deployments stamp no HLC and omit the header.
 
 ## Last-Writer-Wins Delete
 
