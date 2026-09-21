@@ -122,7 +122,7 @@ This ensures that a partially-replicated write is never visible to clients.
 A GET request at any node:
 
 1. Resolves the local copy (journal entry, inline bytes, or data file) and its metadata (the zero-copy metadata view for HEAD, the full record for GET)
-2. In cluster mode, runs read-repair against the object's placement replicas (below) before serving
+2. In cluster mode, runs read-repair against the object's placement replicas (below) before serving; `HEAD` runs the same repair, so HEAD and GET at one node agree and a HEAD revalidation sees the cluster's version, not the node's
 3. Reads the stored bytes locally, or from the replica that holds the newest version when this node does not (see Cluster Architecture, reads at a node that does not hold the object)
 4. Reads K shards and verifies their checksums, decoding if any are degraded
 5. Decrypts and decompresses
@@ -130,18 +130,24 @@ A GET request at any node:
 
 ### Read-Repair
 
-Before serving a clustered GET, the node compares its copy with every placement replica of the object:
+Before serving a clustered GET or HEAD, the node compares its copy with the object's placement replicas:
 
 1. Resolve the replica set over the partition's pinned placement (the nodes the object was written to, not where the live topology would place it now)
-2. Ask every remote replica for its metadata concurrently, bounded by the read timeout
+2. Ask every remote replica for its metadata concurrently, bounded by the read timeout. Once a read quorum has answered (this node's own copy counts when it is a placement replica), the replicas still outstanding get a short grace (250 ms) and are then abandoned
 3. Take the newest answer by HLC (a delete marker counts as a version)
-4. If it is newer than the local copy, install its metadata locally, update the listing index, and read the body from that replica so headers and body describe one version; if the local copy is newest or equal, serve it
+4. If it is newer than the local copy, install its metadata locally and update the listing index. A newer live version is served with its body read from that replica, so headers and body describe one version; a newer delete marker answers NoSuchKey. If the local copy is newest or equal, serve it
 
-Every replica is consulted, not the first that answers: with a replication factor of 3 and a write quorum of 2, a write that landed on two replicas would otherwise be missed whenever the lagging replica answered first, and read-after-write consistency would be weaker than the write quorum implies. Read-repair heals the node that served the read; the replicas it queried are healed by their own reads. Over time, reads converge all replicas without a dedicated anti-entropy protocol.
+The replicas are consulted concurrently and the newest wins, not the first that answers: a lagging replica that answered first used to decide the outcome, so its stale live copy outvoted the newer write on the others and outvoted a newer delete. The read quorum bounds the wait: with a write quorum of N/2 + 1, any N - (N/2 + 1) + 1 copies intersect every completed write, so the newest among a read quorum is at least as new as any committed write, and the stragglers can only add a version whose write never completed (a failed write whose rollback did not reach every replica). Healthy replicas answer within milliseconds of each other, so the grace costs nothing on a healthy cluster and caps what one unresponsive replica adds to a read at the quorum's latency plus the grace, instead of the full RPC timeout.
+
+A key that the node does not hold at all is resolved from the replicas by the same newest-wins fan-out (see Cluster Architecture, reads at a node that does not hold the object) and is not probed a second time.
+
+If no replica answers at all (every probe failed or timed out), the read serves the local copy unverified. This is logged at warn and counted in `neolith_read_repair_probe_failed_total`, so a partition or a broken peer transport shows on the read side and not only as failed writes.
+
+Read-repair heals the node that served the read; the replicas it queried are healed by their own reads. Over time, reads converge all replicas without a dedicated anti-entropy protocol.
 
 ### The `x-neolith-hlc` Header
 
-`GET` and `HEAD` responses carry `x-neolith-hlc`, the HLC stamp of the write that produced the object. It is the version authority a cache in front of the cluster should revalidate on: an ETag repeats when identical content is written twice, the HLC does not. Single-node deployments stamp no HLC and omit the header.
+`GET` and `HEAD` responses carry `x-neolith-hlc`, the HLC stamp of the write that produced the object. It is the version authority a cache in front of the cluster should revalidate on: an ETag repeats when identical content is written twice, the HLC does not. Both verbs run read-repair first, so the value is the cluster's answer at that moment, not the serving node's possibly lagging copy. It is the same header, with the same value, that the cluster's own replication RPCs carry between nodes. Single-node deployments stamp no HLC and omit the header.
 
 ## Last-Writer-Wins Delete
 
