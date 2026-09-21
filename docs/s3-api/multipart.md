@@ -28,8 +28,11 @@ Initiates a new multipart upload and returns an upload ID.
 POST /<bucket>/<key>?uploads HTTP/1.1
 Host: localhost:9000
 Content-Type: application/octet-stream
+x-amz-storage-class: <class>           (optional, default STANDARD)
 x-amz-server-side-encryption: AES256   (optional)
 ```
+
+`x-amz-storage-class` is validated like `PutObject`'s (`400 InvalidStorageClass` for an unknown class), carried by the upload (shown in `ListMultipartUploads`) and set on the completed object. See [Lifecycle Rules](./lifecycle.md#storage-class-names).
 
 **AWS CLI:**
 
@@ -273,9 +276,12 @@ aws --endpoint-url http://localhost:9000 s3api list-multipart-uploads \
     <Key>large-file.bin</Key>
     <UploadId>550e8400-e29b-41d4-a716-446655440000</UploadId>
     <Initiated>2026-03-15T12:00:00.000Z</Initiated>
+    <StorageClass>STANDARD</StorageClass>
   </Upload>
 </ListMultipartUploadsResult>
 ```
+
+`StorageClass` is the class the upload was initiated with.
 
 ## Complete Multipart Upload Script
 

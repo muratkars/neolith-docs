@@ -5,7 +5,7 @@ title: "Lifecycle Rules"
 
 # Lifecycle Rules
 
-Lifecycle rules automate the expiration, cleanup and tiering of objects in a bucket. Neolith supports expiration-based policies for both current and noncurrent object versions, and `Transition` rules that move an object's bytes to a remote S3-compatible tier while the object stays readable at its key.
+Lifecycle rules automate the expiration, cleanup and tiering of objects in a bucket. Neolith supports expiration by age or by date for current versions, noncurrent version expiration, removal of expired delete markers, `Transition` rules (several per rule, by age or by date) that move an object's bytes to a remote S3-compatible tier while the object stays readable at its key, and aborting incomplete multipart uploads.
 
 ## Configuring Lifecycle Rules
 
@@ -150,16 +150,34 @@ awscurl --service s3 --region us-east-1 \
 | Field | Description |
 |---|---|
 | `ID` | Unique identifier for the rule |
-| `Status` | `Enabled` or `Disabled` |
+| `Status` | `Enabled` or `Disabled`; anything else is rejected |
 | `Filter.Prefix` | Apply rule only to keys matching this prefix |
-| `Filter.Tag` | Apply rule only to objects with matching tags |
-| `Expiration.Days` | Delete current version after N days |
-| `Expiration.Date` | Delete current version after this date |
+| `Filter.Tag` | Apply rule only to objects carrying this tag (`Key` and `Value`) |
+| `Filter.And` | Combine a `Prefix` with one or more `Tag` elements; every predicate must match |
+| `Expiration.Days` | Delete the current version once it is N days old (N is a positive integer) |
+| `Expiration.Date` | Delete the current version once this ISO 8601 instant has passed (`2026-03-01T00:00:00Z`; a bare `2026-03-01` is midnight UTC) |
+| `Expiration.ExpiredObjectDeleteMarker` | Remove a delete marker that has no noncurrent versions behind it; exclusive with `Days` and `Date`, and not allowed with a `Tag` filter |
 | `NoncurrentVersionExpiration.NoncurrentDays` | Delete noncurrent versions after N days |
+| `Transition.Days` or `Transition.Date` | When the transition fires (exactly one of the two) |
+| `Transition.StorageClass` | The target class; must be a class the deployment knows (see Storage class names below). A rule may hold several `Transition` elements, one per class |
+| `AbortIncompleteMultipartUpload.DaysAfterInitiation` | Abort in-flight multipart uploads under the rule's prefix once they are N days old; not allowed with a `Tag` filter |
+
+`NoncurrentVersionTransition` is refused with `501 NotImplemented`: noncurrent versions are not moved between storage classes, and a rule naming it is rejected rather than accepted and ignored.
 
 ### Filter with Tags
 
-Rules can filter by both prefix and tags:
+Rules can filter by both prefix and tags. In XML:
+
+```xml
+<Filter>
+  <And>
+    <Prefix>data/</Prefix>
+    <Tag><Key>status</Key><Value>processed</Value></Tag>
+  </And>
+</Filter>
+```
+
+A single predicate needs no `And`: `<Filter><Prefix>data/</Prefix></Filter>` or `<Filter><Tag>...</Tag></Filter>`. The same rule as `mc` JSON:
 
 ```json
 {
@@ -209,12 +227,12 @@ Day 45:  v2 becomes noncurrent for 35 days - deleted by lifecycle scanner
 Neolith runs a background lifecycle scanner with a **1-hour interval**. On each scan:
 
 1. Iterate over all buckets that have lifecycle rules
-2. For each bucket, iterate over all objects
-3. Evaluate each rule's filter (prefix, tags) against the object
-4. For matching objects, check if the expiration condition is met
-5. Expire the object (hard delete for unversioned, delete marker for versioned)
+2. For each bucket, abort every in-flight multipart upload that an `AbortIncompleteMultipartUpload` rule covers (prefix match, initiated at least `DaysAfterInitiation` days ago); journal-staged parts are freed first, as `AbortMultipartUpload` does
+3. For each object, evaluate each rule's filter (prefix, tags)
+4. For a matching object whose current state is a delete marker, apply `ExpiredObjectDeleteMarker`: the marker is removed when every version of the key is a marker, and left alone when a live noncurrent version stands behind it
+5. For a matching live object, expire it when `Days` or `Date` has passed (hard delete for unversioned, delete marker for versioned), expire noncurrent versions past `NoncurrentDays`, and apply the transition whose trigger fired latest among those that have fired (an object past several thresholds goes straight to the deepest class)
 
-The scanner logs its actions and skips disabled rules.
+The scanner logs its actions and skips disabled rules. The multipart upload TTL (`[multipart] upload_ttl_secs`, 24 hours by default) still applies to every bucket as a floor; a lifecycle rule lets a bucket abort earlier or later than that.
 
 ## Storage Sidecar
 
@@ -257,12 +275,34 @@ Tier clients are built at startup. A target added through the admin API (`PUT /_
     <Status>Enabled</Status>
     <Filter><Prefix>datasets/2025/</Prefix></Filter>
     <Transition>
+      <Days>30</Days>
+      <StorageClass>STANDARD_IA</StorageClass>
+    </Transition>
+    <Transition>
       <Days>90</Days>
       <StorageClass>GLACIER</StorageClass>
+    </Transition>
+    <Transition>
+      <Date>2027-01-01T00:00:00Z</Date>
+      <StorageClass>DEEP_ARCHIVE</StorageClass>
     </Transition>
   </Rule>
 </LifecycleConfiguration>
 ```
+
+A rule may hold several transitions, each by age (`Days`) or by date (`Date`), one per storage class. On each scan the object moves to the class whose trigger fired latest among those that have fired: an object already 100 days old goes straight to `GLACIER`, not through `STANDARD_IA` first.
+
+### Storage class names
+
+A storage class is accepted, on `PutObject`, `CopyObject`, `CreateMultipartUpload` and in a `Transition`, when it is one of:
+
+- an S3 canonical name: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER`, `GLACIER_IR`, `DEEP_ARCHIVE`, `EXPRESS_ONEZONE`, `OUTPOSTS`, `SNOW`
+- the `name` of a configured `[[tiers]]` target (a transition to it moves the bytes)
+- a class with a storage-class erasure-coding override (a write to it uses that scheme)
+
+Anything else is refused with `400 InvalidStorageClass`, so a typo cannot become a permanent label that no rule targets and no listing explains. A tier name is 1 to 64 ASCII letters, digits, `_`, `-` or `.`; the server refuses to start on any other name, because the name is what clients see as the class.
+
+The class an object carries is visible everywhere: `x-amz-storage-class` on `HEAD` and `GET` (omitted for `STANDARD`), `<StorageClass>` in `ListObjects`, `ListObjectsV2` and `ListObjectVersions`, and `<StorageClass>` in `ListMultipartUploads` for an upload in flight. A multipart upload initiated with `x-amz-storage-class` completes as an object of that class; under the journal storage scheme its part stripes use the journal's own erasure scheme, so a storage-class erasure-coding override applies to single `PUT`s and to multipart objects on the file-staging path, not to journal-staged multipart parts.
 
 ### What a transition does
 
@@ -331,9 +371,11 @@ EOF
 
 | Feature | Status |
 |---|---|
+| Filter (Prefix, Tag, And) | Supported |
 | Expiration (Days) | Supported |
 | Expiration (Date) | Supported |
+| ExpiredObjectDeleteMarker | Supported: removes a marker with no noncurrent versions behind it |
 | NoncurrentVersionExpiration | Supported |
-| Transition (storage class) | Supported: metadata-only without a tier target, moves bytes to an S3-compatible tier with one (see above) |
-| AbortIncompleteMultipartUpload | Handled by multipart 24h TTL |
-| ExpiredObjectDeleteMarker | Not yet supported |
+| Transition (storage class, several per rule, Days or Date) | Supported: metadata-only without a tier target, moves bytes to an S3-compatible tier with one (see above); the class must be a known one |
+| NoncurrentVersionTransition | Refused with `501 NotImplemented` |
+| AbortIncompleteMultipartUpload | Supported: acted on by the scanner; the multipart TTL remains a floor for every bucket |

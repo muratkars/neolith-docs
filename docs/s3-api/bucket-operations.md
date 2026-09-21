@@ -224,6 +224,8 @@ awscurl --service s3 --region us-east-1 \
 </ListBucketResult>
 ```
 
+`StorageClass` is the object's own class: the one set at `PutObject`, `CopyObject` or `CreateMultipartUpload`, or the one a lifecycle transition moved it to. Listings are served from the on-disk listing index, which records the class per entry; the first listing of each bucket after upgrading to a build with this field re-derives the bucket's index from its metadata, a one-time cost.
+
 For large result sets, Neolith uses streaming XML generation (`xml_list_header`, `entry_chunk`, `footer` helpers) to avoid buffering the entire response in memory.
 
 ## ListObjects v2
