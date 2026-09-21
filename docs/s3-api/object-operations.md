@@ -20,8 +20,11 @@ Content-Type: application/octet-stream
 Content-Length: <size>
 Content-MD5: <base64-md5>          (optional, validated if present)
 x-amz-meta-<name>: <value>         (optional, custom metadata)
+x-amz-storage-class: <class>       (optional, default STANDARD)
 x-amz-server-side-encryption: AES256  (optional, SSE-S3)
 ```
+
+`x-amz-storage-class` must name a class the deployment knows (an S3 canonical name, a configured tier target, or a class with an erasure-coding override); anything else is refused with `400 InvalidStorageClass` and nothing is stored. The class is returned by `HEAD` and `GET` (omitted for `STANDARD`) and shown by every listing. `CopyObject` takes the same header for the destination; without it the copy is `STANDARD`, whatever the source's class. See [Lifecycle Rules](./lifecycle.md#storage-class-names).
 
 **mc:**
 
