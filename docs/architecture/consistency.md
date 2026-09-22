@@ -147,7 +147,7 @@ Read-repair heals the node that served the read; the replicas it queried are hea
 
 ### The `x-neolith-hlc` Header
 
-`GET` and `HEAD` responses carry `x-neolith-hlc`, the HLC stamp of the write that produced the object. It is the version authority a cache in front of the cluster should revalidate on: an ETag repeats when identical content is written twice, the HLC does not. Both verbs run read-repair first, so the value is the cluster's answer at that moment, not the serving node's possibly lagging copy. It is the same header, with the same value, that the cluster's own replication RPCs carry between nodes. Single-node deployments stamp no HLC and omit the header.
+`GET` and `HEAD` responses carry `x-neolith-hlc`, the HLC stamp of the write that produced the object. Write responses carry it too: `PutObject`, `CopyObject`, `CompleteMultipartUpload` and `DeleteObject` (including a delete marker) answer with the stamp of the write they just performed, so a gateway or a replication control plane records the version it wrote without a second round trip. It is the version authority a cache in front of the cluster should revalidate on: an ETag repeats when identical content is written twice, the HLC does not. Both verbs run read-repair first, so the value is the cluster's answer at that moment, not the serving node's possibly lagging copy. It is the same header, with the same value, that the cluster's own replication RPCs carry between nodes. Single-node deployments stamp no HLC and omit the header.
 
 ## Last-Writer-Wins Delete
 
