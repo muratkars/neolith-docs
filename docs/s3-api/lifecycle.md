@@ -164,6 +164,8 @@ awscurl --service s3 --region us-east-1 \
 
 `NoncurrentVersionTransition` is refused with `501 NotImplemented`: noncurrent versions are not moved between storage classes, and a rule naming it is rejected rather than accepted and ignored.
 
+A filter only narrows what a rule touches, so anything in it that the server cannot evaluate is refused rather than dropped: dropping a predicate would silently widen a rule (an expiration meant for tagged objects would expire every object). `ObjectSizeGreaterThan` and `ObjectSizeLessThan` are refused with `501 NotImplemented`, since a rule cannot be scoped by object size. An unknown element inside `Filter` or `And`, a `Tag` with no `Key` (or an empty or self-closing `Tag`), an empty `And`, and a `Rule` with no closing tag are refused with `400 InvalidRequest`.
+
 ### Filter with Tags
 
 Rules can filter by both prefix and tags. In XML:
@@ -378,4 +380,5 @@ EOF
 | NoncurrentVersionExpiration | Supported |
 | Transition (storage class, several per rule, Days or Date) | Supported: metadata-only without a tier target, moves bytes to an S3-compatible tier with one (see above); the class must be a known one |
 | NoncurrentVersionTransition | Refused with `501 NotImplemented` |
+| Filter by object size (`ObjectSizeGreaterThan`, `ObjectSizeLessThan`) | Refused with `501 NotImplemented` |
 | AbortIncompleteMultipartUpload | Supported: acted on by the scanner; the multipart TTL remains a floor for every bucket |
