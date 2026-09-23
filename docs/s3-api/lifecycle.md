@@ -323,6 +323,7 @@ An archived object needs no restore call. It reads with a plain request at the s
 | `GET` with `Range` | For an uncompressed, unencrypted object only the requested byte range is fetched from the tier. Otherwise the whole object is fetched and the range is cut locally. |
 | Batch GET (`?batch`) | Reads through the same record. |
 | Conditional headers (`If-None-Match`, `If-Match`, ...) | Evaluated against the local record before the tier is contacted. |
+| `GET ?versionId=` | In a versioning-enabled bucket the current version transitions like any other object (its per-version bytes are released once the tier holds them) and reads through the record by its version id as well as at its key. Noncurrent versions are not transitioned (`NoncurrentVersionTransition` is refused). |
 
 Failure modes a client can see:
 
