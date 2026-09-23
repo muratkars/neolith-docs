@@ -215,6 +215,10 @@ After a delete marker is created:
 </DeleteMarker>
 ```
 
+### Versioned Writes in a Cluster
+
+A new version, a delete marker and a specific-version delete replicate to the object's placement replicas like any other write: versions and markers at the write quorum (rolled back when the quorum is not met), specific-version deletes best effort. Every node in the replica set holds the same version history and the same current version. See [Consistency](../architecture/consistency.md#versioned-buckets).
+
 ## Permanently Deleting a Version
 
 To permanently remove a specific version (including delete markers), specify the version ID:
