@@ -149,7 +149,7 @@ Read-repair heals the node that served the read; the replicas it queried are hea
 
 `GET` and `HEAD` responses carry `x-neolith-hlc`, the HLC stamp of the write that produced the object. It is the version authority a cache in front of the cluster should revalidate on: an ETag repeats when identical content is written twice, the HLC does not. `GET` and `HEAD` run read-repair first, so the value is the cluster's answer at that moment, not the serving node's possibly lagging copy.
 
-Write responses carry it too: `PutObject`, `CopyObject`, `CompleteMultipartUpload` and `DeleteObject` answer with the stamp of the write they just performed, so a gateway or a replication control plane records the version it wrote without a second round trip. The value is the stamp the write was replicated under. Writes to a versioning-enabled bucket (a versioned `PutObject`, the delete marker a `DeleteObject` creates, `DELETE ?versionId=`) are node-local today and omit the header: they have no cluster authority to advertise until versioned writes replicate (tracked as GH #366). It is the same header, with the same value, that the cluster's own replication RPCs carry between nodes. Single-node deployments stamp no HLC and omit the header.
+Write responses carry it too: `PutObject`, `CopyObject`, `CompleteMultipartUpload` and `DeleteObject` answer with the stamp of the write they just performed, so a gateway or a replication control plane records the version it wrote without a second round trip. The value is the stamp the write was replicated under, for versioned and unversioned buckets alike. It is the same header, with the same value, that the cluster's own replication RPCs carry between nodes. Single-node deployments stamp no HLC and omit the header.
 
 ## Last-Writer-Wins Delete
 
@@ -181,6 +181,8 @@ This ensures that a write and delete on different nodes resolve consistently reg
 ### Versioned Buckets
 
 For buckets with versioning enabled, DELETE does not remove the object. Instead, it creates a delete marker (a metadata entry with `is_delete_marker = true`). Previous versions remain accessible by version ID.
+
+In a cluster, a versioned write is a write like any other: a new version, a delete marker, and a specific-version delete reach the object's placement replicas. A version or a marker needs the write quorum and is rolled back on the coordinator when the quorum is not met; a specific-version delete is fanned out best effort, as an unversioned delete is. A replica records every version it receives, whatever the order of arrival (versions are immutable and keyed by id), and moves its current version forward only: an older version that arrives after a newer one is kept in the history without becoming current. Before this, a versioning-enabled bucket's writes lived only on the node that served them.
 
 ## Split-Brain Detection and Recovery
 
