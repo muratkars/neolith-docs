@@ -9,7 +9,10 @@ Neolith supports the core S3 bucket operations: create, delete, head, list bucke
 
 ## CreateBucket
 
-Creates a new bucket.
+Creates a new bucket. In a cluster the bucket exists on every node once the
+call returns (see [Bucket configuration](../architecture/cluster.md#bucket-configuration)); the same holds for
+`DeleteBucket` and for every bucket configuration (versioning, lifecycle,
+CORS, policy, website, tagging, notification).
 
 **Request:**
 
@@ -59,7 +62,10 @@ awscurl --service s3 --region us-east-1 \
 
 ## DeleteBucket
 
-Deletes an empty bucket. Returns `409 BucketNotEmpty` if objects remain.
+Deletes an empty bucket. Returns `409 BucketNotEmpty` if objects remain. In a
+cluster the removal reaches every node, and a node that missed it converges
+over the heartbeat; a removed bucket is never handed back by a node that
+still had it.
 
 **Request:**
 
