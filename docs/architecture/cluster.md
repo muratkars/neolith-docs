@@ -236,13 +236,17 @@ of a bucket configuration stamps the write with its hybrid logical clock,
 applies it to its own sidecar, and sends it to every other online node,
 awaiting the fan-out before it answers. A node applies a record
 last-writer-wins per bucket and kind: a newer stamp replaces what it holds,
-an older one is dropped (the sender is told, and the newer configuration
-stands cluster-wide), an equal one is the same write seen again.
+an older one is dropped (the sender is told which stamp won, and the newer
+configuration stands cluster-wide), an equal one is the same write seen
+again. Every stamp a node receives advances its own clock, so a node whose
+clock lags a peer's still stamps its next write above what the peer holds.
+A write the serving node's own store drops as older than what it holds is
+answered `409 OperationAborted` rather than reported as done.
 
 A bucket removal is kept as a tombstone with the stamp of the removal, so a
 node that missed the delete cannot hand the bucket back on the next pull
-and a configuration record older than the removal cannot recreate it; a
-later `CreateBucket` lifts the tombstone. A node that still holds objects in
+and no configuration record other than a later `CreateBucket` recreates it,
+whatever its stamp; the `CreateBucket` lifts the tombstone. A node that still holds objects in
 a bucket whose removal arrives keeps the directory.
 
 Anti-entropy rides the heartbeat, like the partition-view maps: every node
