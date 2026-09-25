@@ -219,10 +219,49 @@ Inter-node communication uses HTTP/2 over the same port (9000) as client traffic
 | `/_neolith/v1/shard/{partition}/{shard_id}` | GET | Shard read (for repair); honours `Range: bytes=a-b` |
 | `/_neolith/v1/stripe-shard/{owner}/{stripe_id}/{shard_id}` | GET, PUT | Journal stripe shard hosted for a peer; GET honours `Range: bytes=a-b` |
 | `/_neolith/v1/list/{bucket}` | GET | Node-local listing page for distributed LIST fan-out |
+| `/_neolith/v1/bucket-config/{bucket}/{kind}` | PUT | One bucket-configuration record (a bucket's creation or removal, versioning, lifecycle, CORS, policy, website, tagging, notification), stamped in `x-neolith-hlc`; a removal carries `x-neolith-config-removed` |
+| `/_neolith/v1/bucket-configs` | GET | Every bucket-configuration record a node holds and the digest of the set, pulled by a peer whose heartbeat saw the digest change |
 
 ### Reads at a node that does not hold the object
 
 A `GET` can arrive at any node. If the node holds the object (journal entry, inline bytes or data file) it serves it locally. Otherwise it asks the object's placement replicas for their metadata, takes the newest by hybrid logical clock, and reads the stored bytes from that holder over the object route above: whole for the general case, or exactly the requested range for an uncompressed, unencrypted object. The holder decodes from its own erasure-coded stripes, so the reading node needs neither the stripe layout nor the codec. The same route serves read-repair: when a replica has a newer version than the local record, the newer body is read from that replica so headers and body always describe one version. A remote shard read (degraded reconstruction, scrub) moves only the byte window it needs; a peer from before ranged reads existed answers with the whole shard and the reader cuts it locally.
+
+### Bucket configuration
+
+A bucket is a directory plus sidecar files (`.created`, `.versioning.json`,
+`.lifecycle.json`, `.cors.json`, `.policy.json`, `.website.json`,
+`.tags.json`, `.notifications.json`). Each of those is a replicated record:
+the node that serves `CreateBucket`, `DeleteBucket` or any `Put`/`Delete`
+of a bucket configuration stamps the write with its hybrid logical clock,
+applies it to its own sidecar, and sends it to every other online node,
+awaiting the fan-out before it answers. A node applies a record
+last-writer-wins per bucket and kind: a newer stamp replaces what it holds,
+an older one is dropped (the sender is told which stamp won, and the newer
+configuration stands cluster-wide), an equal one is the same write seen
+again. Every stamp a node receives advances its own clock, so a node whose
+clock lags a peer's still stamps its next write above what the peer holds.
+A write the serving node's own store drops as older than what it holds is
+answered `409 OperationAborted` rather than reported as done.
+
+A bucket removal is kept as a tombstone with the stamp of the removal, so a
+node that missed the delete cannot hand the bucket back on the next pull
+and no configuration record other than a later `CreateBucket` recreates it,
+whatever its stamp; the `CreateBucket` lifts the tombstone. A node that still holds objects in
+a bucket whose removal arrives keeps the directory.
+
+Anti-entropy rides the heartbeat, like the partition-view maps: every node
+advertises a digest of its set of stamps in its topology entry, and a peer
+whose advertised digest differs from the one it was last pulled under is
+fetched over `GET /_neolith/v1/bucket-configs` in the background and its
+records applied with the same rule. A node that was down for a write, or
+that the fan-out could not reach, therefore converges within a few
+heartbeat rounds without an operator. Sidecars written before this existed
+carry stamp 0 in a pull, so an upgraded node's configuration reaches a peer
+that has none, and any stamped record anywhere beats them.
+
+A record that changes a sidecar also drops the cache the sidecar backs
+(the versioning status, the CORS rules), so the next request at that node
+reads the new configuration.
 
 ### Distributed LIST
 
