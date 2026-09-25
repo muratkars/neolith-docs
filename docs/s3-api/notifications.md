@@ -67,7 +67,13 @@ The `eventSource` field is always `neolith:s3` (not `aws:s3`), which allows cons
 
 ### Ordering events with `sequencer`
 
-Events for one key can reach a subscriber out of order (two webhook deliveries, a retry after a failure). The `sequencer` field is the hybrid logical clock stamp of the write that produced the event, rendered as 16 upper-case hexadecimal digits, so a plain string compare orders two events for the same key: the greater sequencer is the newer write, whether it is a `PUT`, a copy, a multipart completion, a delete marker or a delete. This is the same stamp the write's response carries in `x-neolith-hlc` (see [Consistency](../architecture/consistency.md#the-x-neolith-hlc-header)). A subscriber that keeps the highest sequencer it has seen per key can discard an older event that arrives later, or a cache can compare it against the `x-neolith-hlc` of the copy it holds.
+Events for one key can reach a subscriber out of order (two webhook deliveries, a retry after a failure). The `sequencer` field is the hybrid logical clock stamp of the write that produced the event, rendered as 16 upper-case hexadecimal digits, so a plain string compare orders two events for the same key: the greater sequencer is the write stamped later, whether it is a `PUT`, a copy, a multipart completion, a delete marker, a delete, or one key of a `DeleteObjects`. A subscriber that keeps the highest sequencer it has seen per key can discard an older event that arrives later.
+
+It is the same stamp the write's response carries in `x-neolith-hlc` (see [Consistency](../architecture/consistency.md#the-x-neolith-hlc-header)), in a different encoding: the header is the stamp in decimal, the sequencer the same value in zero-padded hexadecimal. Convert before comparing the two (`parseInt(sequencer, 16)` equals the header's number); a string compare across the two encodings gives a meaningless answer.
+
+The sequencer orders the writes' stamps. It does not by itself say which bytes a `GET` of the key returns: two writes to one key that race on the same node can land in that node's store in the other order (the replicas apply last-writer-wins on receipt; the serving node's own store does not yet, tracked as GH #372). A consumer that must know what a `GET` returns, such as a cache deciding whether its copy is current, revalidates with `HEAD` and compares `x-neolith-hlc`.
+
+A `DELETE ?versionId=` of a version that was never held answers `204` but emits no event and carries no stamp: nothing was removed.
 
 The field is absent on a single-node deployment, which stamps no clock; there, events are delivered in the order the writes happened. Sequencers order events for one key only; two keys' sequencers are not comparable in any meaningful way beyond the clock's coarse wall time.
 
