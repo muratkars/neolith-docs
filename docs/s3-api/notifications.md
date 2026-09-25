@@ -56,13 +56,20 @@ Events follow the AWS S3 event notification format (version 2.1):
       "key": "data/training-batch-042.parquet",
       "size": 104857600,
       "eTag": "a1b2c3d4e5f6...",
-      "versionId": "v-abc123"
+      "versionId": "v-abc123",
+      "sequencer": "00018F2A3C000007"
     }
   }
 }
 ```
 
 The `eventSource` field is always `neolith:s3` (not `aws:s3`), which allows consumers to distinguish events from Neolith versus AWS.
+
+### Ordering events with `sequencer`
+
+Events for one key can reach a subscriber out of order (two webhook deliveries, a retry after a failure). The `sequencer` field is the hybrid logical clock stamp of the write that produced the event, rendered as 16 upper-case hexadecimal digits, so a plain string compare orders two events for the same key: the greater sequencer is the newer write, whether it is a `PUT`, a copy, a multipart completion, a delete marker or a delete. This is the same stamp the write's response carries in `x-neolith-hlc` (see [Consistency](../architecture/consistency.md#the-x-neolith-hlc-header)). A subscriber that keeps the highest sequencer it has seen per key can discard an older event that arrives later, or a cache can compare it against the `x-neolith-hlc` of the copy it holds.
+
+The field is absent on a single-node deployment, which stamps no clock; there, events are delivered in the order the writes happened. Sequencers order events for one key only; two keys' sequencers are not comparable in any meaningful way beyond the clock's coarse wall time.
 
 ## Configuration API
 
